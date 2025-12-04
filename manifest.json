@@ -1,0 +1,43 @@
+{
+    "manifest_version": 3,
+    "name": "Multimodal AI Browser Agent",
+    "version": "1.0.0",
+    "description": "A multimodal AI assistant for your browser powered by Gemini and OpenAI.",
+    "permissions": [
+        "sidePanel",
+        "activeTab",
+        "tabs",
+        "scripting",
+        "storage",
+        "unlimitedStorage"
+    ],
+    "host_permissions": [
+        "<all_urls>"
+    ],
+    "background": {
+        "service_worker": "src/background/index.ts",
+        "type": "module"
+    },
+    "action": {
+        "default_title": "Open AI Assistant"
+    },
+    "side_panel": {
+        "default_path": "index.html"
+    },
+    "icons": {
+        "16": "icons/icon16.png",
+        "48": "icons/icon48.png",
+        "128": "icons/icon128.png"
+    },
+    "content_scripts": [
+        {
+            "matches": [
+                "<all_urls>"
+            ],
+            "js": [
+                "src/content/index.ts"
+            ],
+            "run_at": "document_idle"
+        }
+    ]
+}
