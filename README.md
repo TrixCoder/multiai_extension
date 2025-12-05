@@ -24,11 +24,12 @@
 
 ### 🧠 Multi-Model AI Support
 Choose from the best AI models available:
-- **Google Gemini** (2.5 Pro, 2.5 Flash, 2.0 Flash, 1.5 Pro/Flash) — Free tier available!
-- **OpenAI** (GPT-4o, GPT-4o Mini, GPT-4 Turbo, o1 Preview/Mini)
-- **Anthropic Claude** (3.5 Sonnet, 3.5 Haiku, 3 Opus)
-- **Perplexity** (Sonar, Sonar Pro) — Real-time web search
-- **Custom Provider** — Use any OpenAI-compatible API
+- **Google Gemini** (2.5 Pro, 2.5 Flash, 2.0 Flash/Pro, 1.5 Pro/Flash) — Free tier available!
+- **OpenAI** (GPT-5.1, GPT-5, GPT-4.1, GPT-4o, o3, o1 Pro)
+- **Anthropic Claude** (Opus 4, Sonnet 4, 3.7/3.5 Sonnet, Haiku)
+- **Perplexity** (Sonar Pro, Sonar Reasoning, Deep Research) — Real-time web search
+- **OpenRouter** — Access 100+ models (Llama 4, DeepSeek R1/V3, Qwen 3, Mistral, Codestral)
+- **Custom Provider** — Use any OpenAI-compatible API (Ollama, LM Studio)
 
 ### 🌐 Browser Automation
 The AI can control your browser to:
@@ -215,7 +216,15 @@ Access to Claude 3.5 Sonnet and other models.
 3. Go to **Settings > Plans & Billing** to add funds
 4. Go to **"Get API Keys"** and click **"Create Key"**
 
-### 5. Custom Provider
+### 5. OpenRouter (Pay-as-you-go) 🌐
+Access 100+ models with a single API key — GPT-4.1, Claude, Llama 4, DeepSeek, and more!
+
+1. Go to [OpenRouter](https://openrouter.ai/)
+2. Sign up or log in
+3. Go to **"Keys"** and click **"Create Key"**
+4. Add credits via **Billing** (pay-as-you-go)
+
+### 6. Custom Provider
 Use any OpenAI-compatible API (like Ollama, LM Studio, etc.):
 
 1. Open Settings

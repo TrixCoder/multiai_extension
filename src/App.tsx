@@ -7,7 +7,6 @@ import type { BrowserContext, MemoryItem } from './lib/ai';
 import { TermsModal } from './components/TermsModal';
 import { MarkdownMessage } from './components/MarkdownMessage';
 import { AdBanner } from './components/AdBanner';
-import { SettingsAd } from './components/SettingsAd';
 
 // Utility for conditional tailwind classes
 function cn(...inputs: (string | undefined | null | false)[]) {
@@ -31,7 +30,7 @@ type ChatSession = {
   timestamp: number;
 };
 
-type Model = 'gemini' | 'openai' | 'perplexity' | 'claude' | 'custom';
+type Model = 'gemini' | 'openai' | 'perplexity' | 'claude' | 'openrouter' | 'custom';
 
 type Reminder = {
   id: string;
@@ -61,12 +60,11 @@ function MainApp() {
   const [openaiApiKey, setOpenaiApiKey] = useState('');
   const [claudeApiKey, setClaudeApiKey] = useState('');
   const [perplexityApiKey, setPerplexityApiKey] = useState('');
+  const [openrouterApiKey, setOpenrouterApiKey] = useState('');
   const [customBaseUrl, setCustomBaseUrl] = useState('');
   const [customApiKey, setCustomApiKey] = useState('');
   const [customModelName, setCustomModelName] = useState('');
   const [memory, setMemory] = useState<MemoryItem[]>([]);
-  const [newMemoryKey, setNewMemoryKey] = useState('');
-  const [newMemoryValue, setNewMemoryValue] = useState('');
 
   const [showSettings, setShowSettings] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
@@ -78,6 +76,8 @@ function MainApp() {
   // Session Management
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState('');
+  const [uploadedImages, setUploadedImages] = useState<string[]>([]); // Base64 images, max 5
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
@@ -97,30 +97,68 @@ function MainApp() {
   // Available Models Mapping
   const AVAILABLE_MODELS: Record<Model, { id: string; name: string }[]> = {
     gemini: [
-      { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro' },
-      { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash' },
+      { id: 'gemini-2.5-pro-preview-06-05', name: 'Gemini 2.5 Pro (Latest)' },
+      { id: 'gemini-2.5-flash-preview-05-20', name: 'Gemini 2.5 Flash' },
       { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash' },
+      { id: 'gemini-2.0-flash-lite', name: 'Gemini 2.0 Flash Lite' },
+      { id: 'gemini-2.0-pro', name: 'Gemini 2.0 Pro' },
       { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro' },
-      { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash' }
+      { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash' },
+      { id: 'gemini-1.5-flash-8b', name: 'Gemini 1.5 Flash 8B' }
     ],
     openai: [
+      { id: 'gpt-5.1', name: 'GPT-5.1 (Latest)' },
+      { id: 'gpt-5', name: 'GPT-5' },
+      { id: 'gpt-4.1', name: 'GPT-4.1' },
+      { id: 'gpt-4.1-mini', name: 'GPT-4.1 Mini' },
+      { id: 'gpt-4.1-nano', name: 'GPT-4.1 Nano' },
       { id: 'gpt-4o', name: 'GPT-4o' },
       { id: 'gpt-4o-mini', name: 'GPT-4o Mini' },
-      { id: 'gpt-4-turbo', name: 'GPT-4 Turbo' },
-      { id: 'o1-preview', name: 'o1 Preview' },
-      { id: 'o1-mini', name: 'o1 Mini' }
+      { id: 'o3', name: 'o3' },
+      { id: 'o3-mini', name: 'o3 Mini' },
+      { id: 'o1', name: 'o1' },
+      { id: 'o1-mini', name: 'o1 Mini' },
+      { id: 'o1-pro', name: 'o1 Pro' }
     ],
     claude: [
-      { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet (New)' },
-      { id: 'claude-3-5-haiku-20241022', name: 'Claude 3.5 Haiku' },
-      { id: 'claude-3-opus-20240229', name: 'Claude 3 Opus' },
-      { id: 'claude-3-sonnet-20240229', name: 'Claude 3 Sonnet' }
+      { id: 'claude-opus-4.5', name: 'Claude Opus 4.5' },
+      { id: 'claude-sonnet-4.5-thinking', name: 'Claude Sonnet 4.5 (Thinking)' },
+      { id: 'claude-sonnet-4.5', name: 'Claude Sonnet 4.5' },
+      { id: 'claude-opus-4', name: 'Claude Opus 4' },
+      { id: 'claude-sonnet-4', name: 'Claude Sonnet 4' },
+      { id: 'claude-3-7-sonnet', name: 'Claude 3.7 Sonnet' },
+      { id: 'claude-3-5-sonnet-v2', name: 'Claude 3.5 Sonnet v2' },
+      { id: 'claude-3-5-sonnet', name: 'Claude 3.5 Sonnet' },
+      { id: 'claude-3-5-haiku', name: 'Claude 3.5 Haiku' },
+      { id: 'claude-3-opus', name: 'Claude 3 Opus' }
     ],
     perplexity: [
       { id: 'sonar-pro', name: 'Sonar Pro' },
-      { id: 'sonar', name: 'Sonar' },
       { id: 'sonar-reasoning-pro', name: 'Sonar Reasoning Pro' },
-      { id: 'sonar-reasoning', name: 'Sonar Reasoning' }
+      { id: 'sonar-reasoning', name: 'Sonar Reasoning' },
+      { id: 'sonar', name: 'Sonar' },
+      { id: 'sonar-deep-research', name: 'Sonar Deep Research' }
+    ],
+    openrouter: [
+      { id: 'openai/gpt-5.1', name: 'GPT-5.1' },
+      { id: 'openai/gpt-5', name: 'GPT-5' },
+      { id: 'openai/gpt-4.1', name: 'GPT-4.1' },
+      { id: 'openai/o1-pro', name: 'o1 Pro' },
+      { id: 'anthropic/claude-opus-4.5', name: 'Claude Opus 4.5' },
+      { id: 'anthropic/claude-sonnet-4.5', name: 'Claude Sonnet 4.5' },
+      { id: 'anthropic/claude-sonnet-4.5-thinking', name: 'Claude Sonnet 4.5 (Thinking)' },
+      { id: 'anthropic/claude-3.7-sonnet', name: 'Claude 3.7 Sonnet' },
+      { id: 'google/gemini-2.5-pro', name: 'Gemini 2.5 Pro' },
+      { id: 'google/gemini-2.5-flash', name: 'Gemini 2.5 Flash' },
+      { id: 'meta-llama/llama-4-maverick', name: 'Llama 4 Maverick' },
+      { id: 'meta-llama/llama-4-scout', name: 'Llama 4 Scout' },
+      { id: 'meta-llama/llama-3.3-70b-instruct', name: 'Llama 3.3 70B' },
+      { id: 'deepseek/deepseek-r1', name: 'DeepSeek R1' },
+      { id: 'deepseek/deepseek-v3', name: 'DeepSeek V3' },
+      { id: 'qwen/qwen-3-235b', name: 'Qwen 3 235B' },
+      { id: 'mistralai/mistral-large-2411', name: 'Mistral Large' },
+      { id: 'mistralai/codestral-2501', name: 'Codestral' },
+      { id: 'cohere/command-r-plus-08-2024', name: 'Command R+' }
     ],
     custom: []
   };
@@ -166,12 +204,13 @@ function MainApp() {
       }
     });
 
-    chrome.storage.sync.get(['geminiApiKey', 'openaiApiKey', 'claudeApiKey', 'perplexityApiKey', 'customBaseUrl', 'customApiKey', 'customModelName', 'selectedModel', 'selectedModelId'], (result) => {
+    chrome.storage.sync.get(['geminiApiKey', 'openaiApiKey', 'claudeApiKey', 'perplexityApiKey', 'openrouterApiKey', 'customBaseUrl', 'customApiKey', 'customModelName', 'selectedModel', 'selectedModelId'], (result) => {
       const data = result as any;
       if (data.geminiApiKey) setGeminiApiKey(data.geminiApiKey);
       if (data.openaiApiKey) setOpenaiApiKey(data.openaiApiKey);
       if (data.claudeApiKey) setClaudeApiKey(data.claudeApiKey);
       if (data.perplexityApiKey) setPerplexityApiKey(data.perplexityApiKey);
+      if (data.openrouterApiKey) setOpenrouterApiKey(data.openrouterApiKey);
       if (data.customBaseUrl) setCustomBaseUrl(data.customBaseUrl);
       if (data.customApiKey) setCustomApiKey(data.customApiKey);
       if (data.customModelName) setCustomModelName(data.customModelName);
@@ -187,13 +226,14 @@ function MainApp() {
       openaiApiKey,
       claudeApiKey,
       perplexityApiKey,
+      openrouterApiKey,
       customBaseUrl,
       customApiKey,
       customModelName,
       selectedModel,
       selectedModelId,
     });
-  }, [geminiApiKey, openaiApiKey, claudeApiKey, perplexityApiKey, customBaseUrl, customApiKey, customModelName, selectedModel, selectedModelId]);
+  }, [geminiApiKey, openaiApiKey, claudeApiKey, perplexityApiKey, openrouterApiKey, customBaseUrl, customApiKey, customModelName, selectedModel, selectedModelId]);
 
   // Persist Sessions
   useEffect(() => {
@@ -293,13 +333,29 @@ function MainApp() {
 
   const handleNewChat = () => createNewSession();
 
-  const addMemory = () => {
-    if (!newMemoryKey.trim() || !newMemoryValue.trim()) return;
-    const updatedMemory = [...memory, { key: newMemoryKey.trim(), value: newMemoryValue.trim() }];
-    setMemory(updatedMemory);
-    chrome.storage.local.set({ memory: updatedMemory });
-    setNewMemoryKey('');
-    setNewMemoryValue('');
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+
+    const remainingSlots = 5 - uploadedImages.length;
+    const filesToProcess = Array.from(files).slice(0, remainingSlots);
+
+    filesToProcess.forEach(file => {
+      if (file.type.startsWith('image/')) {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          const base64 = event.target?.result as string;
+          setUploadedImages(prev => [...prev.slice(0, 4), base64]);
+        };
+        reader.readAsDataURL(file);
+      }
+    });
+
+    e.target.value = '';
+  };
+
+  const removeUploadedImage = (index: number) => {
+    setUploadedImages(prev => prev.filter((_, i) => i !== index));
   };
 
   const removeMemory = (index: number) => {
@@ -694,7 +750,10 @@ function MainApp() {
     };
 
     setMessages(prev => [...prev, newMessage]);
-    if (isUser) setInput('');
+    if (isUser) {
+      setInput('');
+      setUploadedImages([]); // Clear images after sending
+    }
     setIsLoading(true);
     setCurrentThought('');
 
@@ -790,6 +849,7 @@ You CAN navigate to other URLs using the 'navigate' action.`;
         if (selectedModel === 'openai') currentApiKey = openaiApiKey;
         if (selectedModel === 'claude') currentApiKey = claudeApiKey;
         if (selectedModel === 'perplexity') currentApiKey = perplexityApiKey;
+        if (selectedModel === 'openrouter') currentApiKey = openrouterApiKey;
         if (selectedModel === 'custom') currentApiKey = customApiKey;
 
         // Send request to AI provider with Auto-Retry for Rate Limits
@@ -807,7 +867,8 @@ You CAN navigate to other URLs using the 'navigate' action.`;
               context,
               { baseUrl: customBaseUrl, modelName: customModelName },
               memory,
-              selectedModelId
+              selectedModelId,
+              loopCount === 0 ? uploadedImages : [] // Only send images on first message
             );
             break; // Success, exit retry loop
           } catch (error: any) {
@@ -935,6 +996,7 @@ You CAN navigate to other URLs using the 'navigate' action.`;
       openaiApiKey,
       claudeApiKey,
       perplexityApiKey,
+      openrouterApiKey,
       customBaseUrl,
       customApiKey,
       customModelName,
@@ -1006,25 +1068,28 @@ You CAN navigate to other URLs using the 'navigate' action.`;
         showHistory ? "sm:ml-64" : "ml-0"
       )}>
         {/* Header */}
-        <header className="flex items-center justify-between p-3 border-b border-gray-200 dark:border-gray-800 bg-white/50 dark:bg-gray-900/50 backdrop-blur-sm sticky top-0 z-20">
-          <div className="flex items-center gap-2 overflow-hidden">
-            <button onClick={() => setShowHistory(!showHistory)} className="p-2 hover:bg-gray-200 dark:hover:bg-gray-800 rounded-lg transition-colors shrink-0">
-              <Menu className="w-5 h-5" />
+        <header className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-800 bg-white/80 dark:bg-gray-900/80 backdrop-blur-md sticky top-0 z-20 transition-all duration-300">
+          <div className="flex items-center gap-3 overflow-hidden">
+            <button onClick={() => setShowHistory(!showHistory)} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-xl transition-colors shrink-0">
+              <Menu className="w-5 h-5 text-gray-700 dark:text-gray-300" />
             </button>
-            <div className="flex items-center gap-2 overflow-hidden">
-              <img src="/icons/icon48.png" alt="Logo" className="w-6 h-6 rounded-full shrink-0" />
-              <h1 className="font-bold text-lg bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-purple-600 truncate">AI Agent</h1>
+            <div className="flex items-center gap-2.5 overflow-hidden group cursor-default">
+              <div className="relative">
+                <div className="absolute inset-0 bg-blue-500 rounded-full blur opacity-20 group-hover:opacity-40 transition-opacity"></div>
+                <img src="/icons/icon48.png" alt="Logo" className="w-8 h-8 rounded-full shrink-0 relative z-10 shadow-sm" />
+              </div>
+              <h1 className="font-bold text-xl bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-purple-600 dark:from-blue-400 dark:to-purple-400 truncate tracking-tight">AI Agent</h1>
             </div>
           </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <button onClick={() => setShowReminders(!showReminders)} className="p-2 hover:bg-gray-200 dark:hover:bg-gray-800 rounded-lg transition-colors relative">
-              <Bell className="w-5 h-5" />
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button onClick={() => setShowReminders(!showReminders)} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-xl transition-colors relative group">
+              <Bell className="w-5 h-5 text-gray-600 dark:text-gray-400 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors" />
               {reminders.filter(r => r.status === 'pending').length > 0 && (
-                <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+                <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full animate-pulse ring-2 ring-white dark:ring-gray-900" />
               )}
             </button>
-            <button onClick={() => setShowSettings(true)} className="p-2 hover:bg-gray-200 dark:hover:bg-gray-800 rounded-lg transition-colors">
-              <Settings className="w-5 h-5" />
+            <button onClick={() => setShowSettings(true)} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-xl transition-colors group">
+              <Settings className="w-5 h-5 text-gray-600 dark:text-gray-400 group-hover:text-gray-900 dark:group-hover:text-gray-200 transition-colors" />
             </button>
           </div>
         </header>
@@ -1172,74 +1237,92 @@ You CAN navigate to other URLs using the 'navigate' action.`;
 
         {/* Settings Panel */}
         {showSettings && (
-          <div className="absolute inset-0 z-50 bg-gray-100/95 dark:bg-gray-900/95 backdrop-blur-sm p-6 overflow-y-auto animate-in fade-in zoom-in-95 duration-200">
-            <div className="max-w-2xl mx-auto bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-6 border border-gray-200 dark:border-gray-700">
-              <div className="flex justify-between items-center mb-6">
-                <h2 className="text-xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">Settings</h2>
-                <button onClick={() => setShowSettings(false)} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors duration-200"><X className="w-5 h-5" /></button>
+          <div className="absolute inset-0 z-50 bg-black/60 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
+            <div className="w-full max-w-lg bg-gray-900 rounded-3xl shadow-2xl border border-gray-700/50 overflow-hidden">
+              {/* Header */}
+              <div className="flex justify-between items-center p-6 pb-4">
+                <h2 className="text-2xl font-bold bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">Settings</h2>
+                <button onClick={() => setShowSettings(false)} className="p-2 hover:bg-gray-800 rounded-full transition-colors">
+                  <X className="w-5 h-5 text-gray-400" />
+                </button>
               </div>
 
-              {/* Sponsored Link in Settings */}
-              <SettingsAd
-                href="https://github.com/sponsors/TrixCoder"
-                title="Support the Developer"
-                description="Help us keep this extension free and open source!"
-                cta="Sponsor"
-              />
-
-              <div className="space-y-6">
+              <div className="px-6 pb-6 space-y-6 max-h-[70vh] overflow-y-auto">
+                {/* API Keys Section */}
                 <div className="space-y-4">
-                  <h3 className="font-semibold text-sm text-gray-500 dark:text-gray-400 uppercase tracking-wider">API Keys</h3>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Gemini API Key</label>
-                    <input type="password" value={geminiApiKey} onChange={(e) => setGeminiApiKey(e.target.value)} className="w-full p-2 rounded bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600" placeholder="Enter Gemini API Key" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">OpenAI API Key</label>
-                    <input type="password" value={openaiApiKey} onChange={(e) => setOpenaiApiKey(e.target.value)} className="w-full p-2 rounded bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600" placeholder="Enter OpenAI API Key" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Claude API Key</label>
-                    <input type="password" value={claudeApiKey} onChange={(e) => setClaudeApiKey(e.target.value)} className="w-full p-2 rounded bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600" placeholder="Enter Claude API Key" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Perplexity API Key</label>
-                    <input type="password" value={perplexityApiKey} onChange={(e) => setPerplexityApiKey(e.target.value)} className="w-full p-2 rounded bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600" placeholder="Enter Perplexity API Key" />
-                  </div>
-                </div>
-
-                <div className="space-y-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-                  <h3 className="font-semibold text-sm text-gray-500 dark:text-gray-400 uppercase tracking-wider">Custom AI</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <input type="text" value={customBaseUrl} onChange={(e) => setCustomBaseUrl(e.target.value)} className="w-full p-2 rounded bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600" placeholder="Base URL" />
-                    <input type="text" value={customModelName} onChange={(e) => setCustomModelName(e.target.value)} className="w-full p-2 rounded bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600" placeholder="Model Name" />
-                    <input type="password" value={customApiKey} onChange={(e) => setCustomApiKey(e.target.value)} className="w-full p-2 rounded bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 md:col-span-2" placeholder="Custom API Key" />
-                  </div>
-                </div>
-
-                <div className="space-y-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-                  <h3 className="font-semibold text-sm text-gray-500 dark:text-gray-400 uppercase tracking-wider">Memory</h3>
-                  <div className="space-y-2">
-                    {memory.map((item, idx) => (
-                      <div key={idx} className="flex items-center gap-2 bg-gray-50 dark:bg-gray-700 p-2 rounded">
-                        <div className="flex-1 overflow-hidden">
-                          <div className="text-sm font-bold truncate">{item.key}</div>
-                          <div className="text-xs text-gray-500 dark:text-gray-400 truncate">{item.value}</div>
-                        </div>
-                        <button onClick={() => removeMemory(idx)} className="text-red-500 hover:text-red-700"><Trash2 className="w-4 h-4" /></button>
+                  <h3 className="font-semibold text-white">API Keys</h3>
+                  {[
+                    { label: 'Gemini API Key', value: geminiApiKey, setter: setGeminiApiKey },
+                    { label: 'OpenAI API Key', value: openaiApiKey, setter: setOpenaiApiKey },
+                    { label: 'Claude API Key', value: claudeApiKey, setter: setClaudeApiKey },
+                    { label: 'Perplexity API Key', value: perplexityApiKey, setter: setPerplexityApiKey },
+                    { label: 'OpenRouter API Key', value: openrouterApiKey, setter: setOpenrouterApiKey },
+                  ].map(({ label, value, setter }) => (
+                    <div key={label} className="flex items-center gap-3">
+                      <span className="text-sm text-gray-300 w-36 shrink-0">{label}</span>
+                      <div className="flex-1 relative">
+                        <input
+                          type="password"
+                          value={value}
+                          onChange={(e) => setter(e.target.value)}
+                          className="w-full p-2.5 pr-10 rounded-xl bg-gray-800 border border-gray-700 text-white placeholder-gray-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
+                          placeholder="Enter API Key..."
+                        />
                       </div>
-                    ))}
-                  </div>
-                  <div className="flex flex-col sm:flex-row gap-2">
-                    <input type="text" value={newMemoryKey} onChange={(e) => setNewMemoryKey(e.target.value)} className="flex-1 p-2 rounded bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 min-w-0" placeholder="Key" />
-                    <div className="flex gap-2 flex-1">
-                      <input type="text" value={newMemoryValue} onChange={(e) => setNewMemoryValue(e.target.value)} className="flex-1 p-2 rounded bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 min-w-0" placeholder="Value" />
-                      <button onClick={addMemory} className="p-2 bg-blue-600 text-white rounded hover:bg-blue-700 shrink-0"><Plus className="w-4 h-4" /></button>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Custom Provider Section */}
+                <div className="space-y-4 pt-4 border-t border-gray-700/50">
+                  <h3 className="font-semibold text-white">Custom Provider</h3>
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm text-gray-300 w-36 shrink-0">Base URL</span>
+                      <input type="text" value={customBaseUrl} onChange={(e) => setCustomBaseUrl(e.target.value)} className="flex-1 p-2.5 rounded-xl bg-gray-800 border border-gray-700 text-white placeholder-gray-500 focus:border-blue-500 outline-none" placeholder="https://api.example.com/v1" />
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm text-gray-300 w-36 shrink-0">Model Name</span>
+                      <input type="text" value={customModelName} onChange={(e) => setCustomModelName(e.target.value)} className="flex-1 p-2.5 rounded-xl bg-gray-800 border border-gray-700 text-white placeholder-gray-500 focus:border-blue-500 outline-none" placeholder="custom-model-001" />
                     </div>
                   </div>
                 </div>
 
-                <button onClick={saveSettings} className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-lg font-medium transition-colors shadow-lg shadow-blue-600/20">Save Changes</button>
+                {/* Memory Section */}
+                <div className="space-y-4 pt-4 border-t border-gray-700/50">
+                  <h3 className="font-semibold text-white">Memory</h3>
+                  <div className="space-y-2">
+                    {memory.map((item, idx) => (
+                      <div key={idx} className="flex items-center justify-between p-3 bg-gray-800/50 rounded-xl border border-gray-700/50">
+                        <span className="text-sm text-gray-200">
+                          <span className="text-gray-400">{item.key}:</span> {item.value}
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <button onClick={() => removeMemory(idx)} className="p-1.5 hover:bg-gray-700 rounded-lg text-gray-400 hover:text-red-400 transition-colors">
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                    <button
+                      onClick={() => {
+                        const key = prompt('Enter key (e.g., Name):');
+                        const value = prompt('Enter value:');
+                        if (key && value) {
+                          setMemory(prev => [...prev, { key, value }]);
+                        }
+                      }}
+                      className="w-full p-3 border border-dashed border-gray-600 rounded-xl text-blue-400 hover:bg-gray-800/50 transition-colors flex items-center justify-center gap-2"
+                    >
+                      <Plus className="w-4 h-4" /> Add
+                    </button>
+                  </div>
+                </div>
+
+                {/* Save Button */}
+                <button onClick={saveSettings} className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3.5 rounded-2xl font-medium transition-all shadow-lg shadow-blue-600/30 hover:shadow-blue-600/50">
+                  Save Settings
+                </button>
               </div>
             </div>
           </div>
@@ -1247,17 +1330,19 @@ You CAN navigate to other URLs using the 'navigate' action.`;
 
         {/* Model Selector */}
         <div className="flex flex-col bg-gray-100 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
-          <div className="flex gap-2 p-2 overflow-x-auto scrollbar-hide">
-            {(['gemini', 'openai', 'claude', 'perplexity', 'custom'] as const).map((m) => (
+          <div className="flex flex-wrap gap-2 p-2">
+            {(['gemini', 'openai', 'claude', 'perplexity', 'openrouter', 'custom'] as const).map((m) => (
               <button
                 key={m}
                 onClick={() => { setSelectedModel(m); chrome.storage.sync.set({ selectedModel: m }); }}
                 className={cn(
-                  "px-3 py-1 rounded-full text-xs font-medium capitalize whitespace-nowrap transition-colors flex items-center gap-1",
-                  selectedModel === m ? "bg-blue-600 text-white shadow-sm" : "bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600"
+                  "px-3 py-1.5 rounded-full text-xs font-medium capitalize whitespace-nowrap transition-all duration-200 flex items-center gap-1.5 border",
+                  selectedModel === m
+                    ? "bg-blue-600 text-white shadow-md shadow-blue-500/20 border-transparent"
+                    : "bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 hover:border-gray-300 dark:hover:border-gray-600"
                 )}
               >
-                {m}
+                {m === 'openrouter' ? 'OpenRouter' : m}
               </button>
             ))}
           </div>
@@ -1266,7 +1351,8 @@ You CAN navigate to other URLs using the 'navigate' action.`;
               <select
                 value={selectedModelId}
                 onChange={(e) => { setSelectedModelId(e.target.value); chrome.storage.sync.set({ selectedModelId: e.target.value }); }}
-                className="w-full p-1.5 text-xs rounded-lg bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 focus:ring-1 focus:ring-blue-500 outline-none"
+                className="w-full p-2 text-xs rounded-xl bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 focus:ring-1 focus:ring-blue-500 outline-none cursor-pointer appearance-none"
+                style={{ maxHeight: '200px' }}
               >
                 {AVAILABLE_MODELS[selectedModel].map((model) => (
                   <option key={model.id} value={model.id}>{model.name}</option>
@@ -1366,8 +1452,52 @@ You CAN navigate to other URLs using the 'navigate' action.`;
 
         {/* Input Area */}
         <div className="p-4 bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-800">
+          {/* Image Previews */}
+          {uploadedImages.length > 0 && (
+            <div className="flex gap-2 mb-3 flex-wrap">
+              {uploadedImages.map((img, idx) => (
+                <div key={idx} className="relative group">
+                  <img src={img} alt={`Upload ${idx + 1}`} className="w-16 h-16 object-cover rounded-xl border border-gray-200 dark:border-gray-700" />
+                  <button
+                    onClick={() => removeUploadedImage(idx)}
+                    className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-lg"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              ))}
+              {uploadedImages.length < 5 && (
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-16 h-16 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl flex items-center justify-center text-gray-400 hover:border-blue-500 hover:text-blue-500 transition-colors"
+                >
+                  <Plus className="w-5 h-5" />
+                </button>
+              )}
+            </div>
+          )}
+
           <div className="relative flex items-end gap-2 bg-gray-100 dark:bg-gray-800 p-2 rounded-2xl border border-gray-200 dark:border-gray-700 focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500 transition-all shadow-inner">
-            <button className="p-2 text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-gray-700 rounded-xl transition-colors"><ImageIcon className="w-5 h-5" /></button>
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleImageUpload}
+              accept="image/*"
+              multiple
+              className="hidden"
+            />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className={cn(
+                "p-2 rounded-xl transition-colors",
+                uploadedImages.length > 0
+                  ? "text-blue-500 bg-blue-100 dark:bg-blue-900/30"
+                  : "text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-gray-700"
+              )}
+              title={`Add images (${uploadedImages.length}/5)`}
+            >
+              <ImageIcon className="w-5 h-5" />
+            </button>
             <textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
@@ -1381,7 +1511,7 @@ You CAN navigate to other URLs using the 'navigate' action.`;
               className="flex-1 bg-transparent border-none focus:ring-0 resize-none max-h-32 py-2 text-sm"
               rows={1}
             />
-            <button onClick={handleSend} disabled={isLoading || !input.trim()} className="p-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg shadow-blue-600/20"><Send className="w-5 h-5" /></button>
+            <button onClick={handleSend} disabled={isLoading || (!input.trim() && uploadedImages.length === 0)} className="p-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg shadow-blue-600/20"><Send className="w-5 h-5" /></button>
           </div>
         </div>
       </div>

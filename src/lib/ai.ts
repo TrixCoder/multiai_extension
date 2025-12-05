@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 
-export type ModelType = 'gemini' | 'openai' | 'perplexity' | 'claude' | 'custom';
+export type ModelType = 'gemini' | 'openai' | 'perplexity' | 'claude' | 'openrouter' | 'custom';
 
 export interface BrowserContext {
     title: string;
@@ -28,7 +28,8 @@ export async function sendMessage(
     context?: BrowserContext,
     customConfig?: { baseUrl: string; modelName: string },
     memory?: MemoryItem[],
-    modelId?: string
+    modelId?: string,
+    images?: string[] // Base64 encoded images
 ): Promise<string> {
     if (!apiKey) {
         throw new Error("API Key is missing. Please set it in settings.");
@@ -42,13 +43,15 @@ export async function sendMessage(
 
     try {
         if (model === 'gemini') {
-            return await sendToGemini(apiKey, history, newMessage, context, memoryContext, modelId);
+            return await sendToGemini(apiKey, history, newMessage, context, memoryContext, modelId, images);
         } else if (model === 'openai') {
-            return await sendToOpenAI(apiKey, history, newMessage, context, memoryContext, modelId);
+            return await sendToOpenAI(apiKey, history, newMessage, context, memoryContext, modelId, images);
         } else if (model === 'claude') {
-            return await sendToClaude(apiKey, history, newMessage, context, memoryContext, modelId);
+            return await sendToClaude(apiKey, history, newMessage, context, memoryContext, modelId, images);
         } else if (model === 'perplexity') {
             return await sendToPerplexity(apiKey, history, newMessage, context, memoryContext, modelId);
+        } else if (model === 'openrouter') {
+            return await sendToOpenRouter(apiKey, history, newMessage, context, memoryContext, modelId, images);
         } else if (model === 'custom') {
             return await sendToCustom(apiKey, customConfig?.baseUrl || '', customConfig?.modelName || '', history, newMessage, context, memoryContext);
         }
@@ -120,7 +123,7 @@ Response:
 
 `;
 
-async function sendToGemini(apiKey: string, history: ChatMessage[], newMessage: string, context?: BrowserContext, memoryContext: string = "", modelId: string = "gemini-2.0-flash"): Promise<string> {
+async function sendToGemini(apiKey: string, history: ChatMessage[], newMessage: string, context?: BrowserContext, memoryContext: string = "", modelId: string = "gemini-2.0-flash", images?: string[]): Promise<string> {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${apiKey}`;
 
     // Prepare contents
@@ -130,35 +133,25 @@ async function sendToGemini(apiKey: string, history: ChatMessage[], newMessage: 
     // Gemini expects: { role: "user" | "model", parts: [{ text: "..." }] }
     // We need to merge consecutive messages of the same role if necessary, but simple mapping usually works if roles alternate.
     // However, the system prompt is passed separately in 'systemInstruction'.
-
-    // Filter empty messages
-    const validHistory = history.filter(msg => msg.content && msg.content.trim() !== '');
-
-    validHistory.forEach(msg => {
+    for (const msg of history) {
         contents.push({
-            role: msg.role === 'user' ? 'user' : 'model',
+            role: msg.role === 'assistant' ? 'model' : 'user',
             parts: [{ text: msg.content }]
         });
-    });
-
-    // 2. Add New Message + Context
-    let finalUserMessage = newMessage;
-    if (context) {
-        let contextMsg = `\n\n[Current Page Context]\nTitle: ${context.title}\nURL: ${context.url}\nContent: ${context.content.substring(0, 25000)}...`; // Increased limit for Gemini
-        if (context.openTabs && context.openTabs.length > 0) {
-            contextMsg += `\n\n[Open Tabs]\n${context.openTabs.map(t => `- ID: ${t.id}, Title: "${t.title}", URL: ${t.url}`).join('\n')}`;
-        }
-        finalUserMessage += contextMsg;
     }
 
-    // Add the new message as a user turn
-    const lastContent = contents[contents.length - 1];
-    if (lastContent && lastContent.role === 'user') {
-        // Merge with previous user message if it exists (Gemini doesn't like consecutive user messages sometimes, though it's better now)
-        // But to be safe and logical, we append to the conversation.
-        // Actually, 'contents' represents the history. The new message is the *next* turn.
-        // If the last message in history was user, we should probably merge or just push.
-        // Let's push a new turn.
+    // 2. Add the new user message with context
+    let contextString = "";
+    if (context) {
+        contextString = `\n\n[Current Page Context]\nTitle: ${context.title}\nURL: ${context.url}\nContent: ${context.content.substring(0, 15000)}...`;
+        if (context.openTabs && context.openTabs.length > 0) {
+            contextString += `\n\n[Open Tabs]\n${context.openTabs.map(t => `- ID: ${t.id}, Title: "${t.title}", URL: ${t.url}`).join('\n')}`;
+        }
+    }
+    const finalUserMessage = newMessage + contextString;
+
+    // Check if last message in history was 'user' to avoid consecutive user messages (shouldn't happen if history is correct, but just in case)
+    if (contents.length > 0 && contents[contents.length - 1].role === 'user') {
         contents.push({
             role: 'user',
             parts: [{ text: finalUserMessage }]
@@ -168,6 +161,27 @@ async function sendToGemini(apiKey: string, history: ChatMessage[], newMessage: 
             role: 'user',
             parts: [{ text: finalUserMessage }]
         });
+    }
+
+    // Handle User-uploaded Images
+    if (images && images.length > 0) {
+        const lastMsg = contents[contents.length - 1];
+        for (const img of images) {
+            try {
+                const base64Data = img.split(',')[1];
+                const mimeType = img.split(';')[0].split(':')[1] || 'image/jpeg';
+                if (base64Data) {
+                    lastMsg.parts.push({
+                        inline_data: {
+                            mime_type: mimeType,
+                            data: base64Data
+                        }
+                    });
+                }
+            } catch (e) {
+                console.error("Error processing uploaded image for Gemini:", e);
+            }
+        }
     }
 
     // Handle Screenshot (Multimodal)
@@ -229,7 +243,7 @@ async function sendToGemini(apiKey: string, history: ChatMessage[], newMessage: 
     }
 }
 
-async function sendToOpenAI(apiKey: string, history: ChatMessage[], newMessage: string, context?: BrowserContext, memoryContext: string = "", modelId: string = "gpt-4o"): Promise<string> {
+async function sendToOpenAI(apiKey: string, history: ChatMessage[], newMessage: string, context?: BrowserContext, memoryContext: string = "", modelId: string = "gpt-4o", images?: string[]): Promise<string> {
     const openai = new OpenAI({
         apiKey: apiKey,
         baseURL: 'https://api.openai.com/v1',
@@ -265,6 +279,18 @@ async function sendToOpenAI(apiKey: string, history: ChatMessage[], newMessage: 
         }
     }
 
+    // Add user-uploaded images
+    if (images && images.length > 0) {
+        for (const img of images) {
+            currentContent.push({
+                type: "image_url",
+                image_url: {
+                    url: img
+                }
+            });
+        }
+    }
+
     messages.push({
         role: "user",
         content: currentContent
@@ -279,7 +305,7 @@ async function sendToOpenAI(apiKey: string, history: ChatMessage[], newMessage: 
     return completion.choices[0].message.content || "{}";
 }
 
-async function sendToClaude(apiKey: string, history: ChatMessage[], newMessage: string, context?: BrowserContext, memoryContext: string = "", modelId: string = "claude-3-5-sonnet-20240620"): Promise<string> {
+async function sendToClaude(apiKey: string, history: ChatMessage[], newMessage: string, context?: BrowserContext, memoryContext: string = "", modelId: string = "claude-3-5-sonnet-20240620", images?: string[]): Promise<string> {
     const alternatingHistory: { role: 'user' | 'assistant'; content: string }[] = [];
     const cleanHistory = history.filter(msg => msg.content && msg.content.trim() !== '');
 
@@ -328,6 +354,26 @@ async function sendToClaude(apiKey: string, history: ChatMessage[], newMessage: 
                     data: base64Data
                 }
             });
+        }
+    }
+
+    // Add user-uploaded images
+    if (images && images.length > 0) {
+        for (const img of images) {
+            try {
+                const base64Data = img.split(',')[1];
+                const mimeType = img.split(';')[0].split(':')[1] || 'image/jpeg';
+                currentContent.push({
+                    type: "image",
+                    source: {
+                        type: "base64",
+                        media_type: mimeType,
+                        data: base64Data
+                    }
+                });
+            } catch (e) {
+                console.error("Error processing image for Claude:", e);
+            }
         }
     }
 
@@ -515,5 +561,72 @@ async function sendToCustom(apiKey: string, baseUrl: string, modelName: string, 
     });
 
     return completion.choices[0].message.content || "{}";
+}
+
+
+
+// OpenRouter API (Unified access to many models)
+async function sendToOpenRouter(apiKey: string, history: ChatMessage[], newMessage: string, context?: BrowserContext, memoryContext: string = "", modelId: string = "openai/gpt-4o", images?: string[]): Promise<string> {
+    let contextString = "";
+    if (context) {
+        contextString = `
+
+[Current Page Context]
+Title: ${context.title}
+URL: ${context.url}
+Content: ${context.content.substring(0, 15000)}...`;
+        if (context.openTabs && context.openTabs.length > 0) {
+            contextString += `
+
+[Open Tabs]
+${context.openTabs.map(t => `- ID: ${t.id}, Title: "${t.title}", URL: ${t.url}`).join("\n")}`;
+        }
+    }
+
+    // Build user message content (text + images if any)
+    let userContent: any = newMessage + contextString;
+
+    if (images && images.length > 0) {
+        userContent = [
+            { type: "text", text: newMessage + contextString },
+            ...images.map(img => ({
+                type: "image_url",
+                image_url: { url: img }
+            }))
+        ];
+    }
+
+    const messages = [
+        { role: "system", content: SYSTEM_PROMPT + memoryContext },
+        ...history.map(msg => ({ role: msg.role, content: msg.content })),
+        { role: "user", content: userContent }
+    ];
+
+    console.log("OpenRouter Request:", { model: modelId, messagesCount: messages.length });
+
+    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+            "Authorization": `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://github.com/TrixCoder/multiai_extension",
+            "X-Title": "MultiModal Browser Agent"
+        },
+        body: JSON.stringify({
+            model: modelId,
+            messages: messages
+        })
+    });
+
+    if (!response.ok) {
+        const errorData = await response.text();
+        console.error("OpenRouter Error:", response.status, errorData);
+        throw new Error(`OpenRouter API error: ${response.status} - ${errorData}`);
+    }
+
+    const data = await response.json();
+    console.log("OpenRouter Response:", data);
+
+    return data.choices?.[0]?.message?.content || "{}";
 }
 

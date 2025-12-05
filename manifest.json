@@ -1,7 +1,7 @@
 {
     "manifest_version": 3,
     "name": "Multimodal AI Browser Agent",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "description": "A multimodal AI assistant for your browser powered by Gemini and OpenAI.",
     "permissions": [
         "sidePanel",
