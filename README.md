@@ -75,6 +75,10 @@ Anthropic also operates on a pre-paid credit system.
 2.  Open the **Settings** (gear icon) and enter your API keys for the models you wish to use.
 3.  Start chatting! You can ask general questions or give commands like "open google and search for AI news".
 
+## Privacy Policy
+
+Please read our [Privacy Policy](PRIVACY.md) for details on how your data is handled.
+
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
