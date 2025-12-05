@@ -9,6 +9,18 @@ export default defineConfig({
     react(),
     crx({ manifest }),
   ],
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor: ['react', 'react-dom'],
+          ui: ['lucide-react', 'clsx', 'tailwind-merge'],
+          markdown: ['react-markdown', 'rehype-highlight']
+        }
+      }
+    },
+    chunkSizeWarningLimit: 1000,
+  },
   server: {
     port: 5173,
     strictPort: true,

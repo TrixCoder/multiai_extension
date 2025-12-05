@@ -1,11 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
-import { Send, Image as ImageIcon, Settings, Bot, User, Loader2, Moon, Sun, PlusCircle, Trash2, Plus, History, MessageSquare, X, Edit2, Check } from 'lucide-react';
+import { Send, Image as ImageIcon, Settings, Bot, User, Loader2, PlusCircle, Trash2, Plus, MessageSquare, X, Edit2, Check, Menu, Copy } from 'lucide-react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { sendMessage } from './lib/ai';
 import type { BrowserContext, MemoryItem } from './lib/ai';
 import { TermsModal } from './components/TermsModal';
-import { ThemeProvider, useTheme } from './components/ThemeProvider';
 import { MarkdownMessage } from './components/MarkdownMessage';
 import { AdBanner } from './components/AdBanner';
 import { SettingsAd } from './components/SettingsAd';
@@ -71,10 +70,17 @@ function MainApp() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
-  const { theme, toggleTheme } = useTheme();
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  const copyToClipboard = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch (err) {
+      console.error('Failed to copy:', err);
+    }
   };
 
   // Available Models Mapping
@@ -113,7 +119,7 @@ function MainApp() {
     if (selectedModel !== 'custom' && AVAILABLE_MODELS[selectedModel].length > 0 && !AVAILABLE_MODELS[selectedModel].find(m => m.id === selectedModelId)) {
       setSelectedModelId(AVAILABLE_MODELS[selectedModel][0]?.id || '');
     }
-  }, [selectedModel, selectedModelId]); // Added selectedModelId to dependencies to prevent infinite loop if it's already valid
+  }, [selectedModel, selectedModelId]);
 
   // Load saved state and handle migration
   useEffect(() => {
@@ -174,7 +180,7 @@ function MainApp() {
       customApiKey,
       customModelName,
       selectedModel,
-      selectedModelId, // Persist selectedModelId
+      selectedModelId,
     });
   }, [geminiApiKey, openaiApiKey, claudeApiKey, perplexityApiKey, customBaseUrl, customApiKey, customModelName, selectedModel, selectedModelId]);
 
@@ -293,42 +299,91 @@ function MainApp() {
 
   const executeAction = async (action: any) => {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tab?.id) return "Error: No active tab found.";
+    if (!tab?.id) return "❌ Error: No active tab found.";
 
+    console.log("📍 Executing Action:", JSON.stringify(action));
+
+    // --- NAVIGATE ---
     if (action.action === 'navigate') {
-      await chrome.tabs.update(tab.id, { url: action.url });
-      return `✅ **Navigated** to [${action.url}](${action.url})`;
+      if (action.url) {
+        try {
+          console.log(`🧭 Navigating to: ${action.url}`);
+          await chrome.tabs.update(tab.id, { url: action.url });
+
+          // Wait for load with verification
+          let attempts = 0;
+          while (attempts < 30) {
+            const t = await chrome.tabs.get(tab.id);
+            if (t.status === 'complete') {
+              const result = `✅ **Navigated** to ${t.url}`;
+              console.log(result);
+              return result;
+            }
+            await new Promise(r => setTimeout(r, 500));
+            attempts++;
+          }
+          const timeout = `⚠️ **Navigation Timeout:** Page took too long to load.`;
+          console.warn(timeout);
+          return timeout;
+        } catch (e: any) {
+          const error = `❌ **Navigation Failed:** ${e.message}`;
+          console.error(error);
+          return error;
+        }
+      }
+      return "❌ Error: No URL provided for navigation.";
     }
+
+    // --- SEARCH (Direct Google Search - Most Reliable) ---
     if (action.action === 'search') {
       const url = `https://www.google.com/search?q=${encodeURIComponent(action.query)}`;
+      console.log(`🔍 Direct search: ${action.query}`);
       await chrome.tabs.update(tab.id, { url });
-      return `🔍 **Searched** Google for: "${action.query}"`;
+      // Wait for load
+      let attempts = 0;
+      while (attempts < 20) {
+        const t = await chrome.tabs.get(tab.id);
+        if (t.status === 'complete') break;
+        await new Promise(r => setTimeout(r, 500));
+        attempts++;
+      }
+      const result = `✅ **Searched** Google for: "${action.query}"`;
+      console.log(result);
+      return result;
     }
+
+    // --- NEW TAB ---
     if (action.action === 'new_tab') {
       await chrome.tabs.create({ url: action.url || 'chrome://newtab' });
-      return `✨ **Opened New Tab**${action.url ? ` to ${action.url}` : ''}`;
+      return `✅ **Opened New Tab**${action.url ? ` to ${action.url}` : ''}`;
     }
+
+    // --- CLOSE TAB ---
     if (action.action === 'close_tab') {
       if (action.tabId) {
         await chrome.tabs.remove(action.tabId);
-        return `🗑️ **Closed Tab** ${action.tabId}`;
+        return `✅ **Closed Tab** ${action.tabId}`;
       }
-      return "❌ Error: No tabId provided for close_tab.";
+      return "❌ Error: No tabId provided.";
     }
+
+    // --- SWITCH TAB ---
     if (action.action === 'switch_tab') {
       if (action.tabId) {
         try {
           const tabId = parseInt(action.tabId);
-          const tab = await chrome.tabs.get(tabId);
+          const switchTab = await chrome.tabs.get(tabId);
           await chrome.tabs.update(tabId, { active: true });
-          if (tab.windowId) await chrome.windows.update(tab.windowId, { focused: true });
-          return `🔀 **Switched Tab** to "${tab.title}"`;
+          if (switchTab.windowId) await chrome.windows.update(switchTab.windowId, { focused: true });
+          return `✅ **Switched** to Tab "${switchTab.title}"`;
         } catch (e) {
-          return `❌ **Failed to switch tab**: Tab ID ${action.tabId} not found.`;
+          return `❌ **Tab Not Found:** ID ${action.tabId}`;
         }
       }
-      return `❌ **Tab Not Found**`;
+      return `❌ Error: No tabId provided.`;
     }
+
+    // --- GET TAB CONTENT ---
     if (action.action === 'get_tab_content') {
       if (action.tabId) {
         try {
@@ -336,44 +391,232 @@ function MainApp() {
             target: { tabId: action.tabId },
             func: () => document.body.innerText,
           });
-          return `📄 **Read Content** of Tab ${action.tabId}:\n${result?.substring(0, 500)}...`;
+          return `✅ **Read Content:**\n${result?.substring(0, 1000)}...`;
         } catch (e) {
-          return `❌ **Failed to read tab**: Tab ID ${action.tabId} not found or inaccessible.`;
+          return `❌ **Failed to read tab**: Inaccessible.`;
         }
       }
-      return "❌ Error: No tabId provided for get_tab_content.";
+      return "❌ Error: No tabId provided.";
     }
+
+    // --- ASK SELECTION ---
     if (action.action === 'ask_selection') {
       return action.question;
     }
 
-    // DOM Actions
+    // --- DOM ACTIONS (scroll, click, type, press_key) ---
     try {
       const results = await chrome.scripting.executeScript({
         target: { tabId: tab.id },
         func: (act) => {
+          // Helper: Check if element is visible
+          const isVisible = (el: HTMLElement): boolean => {
+            if (!el) return false;
+            const style = window.getComputedStyle(el);
+            const rect = el.getBoundingClientRect();
+            return (
+              style.display !== 'none' &&
+              style.visibility !== 'hidden' &&
+              parseFloat(style.opacity) > 0 &&
+              rect.width > 0 &&
+              rect.height > 0
+            );
+          };
+
+          // Helper: Find element with multiple selector strategies
+          const findElement = (selector: string): HTMLElement | null => {
+            // Try direct selector first
+            let el = document.querySelector(selector) as HTMLElement;
+            if (el && isVisible(el)) return el;
+
+            // If not found or hidden, try common alternatives
+            const alternatives = [
+              selector,
+              selector.replace('input[', 'textarea['), // input -> textarea
+              selector.replace('textarea[', 'input['), // textarea -> input
+              `[aria-label="${selector.match(/aria-label="([^"]+)"/)?.[1] || ''}"]`,
+            ];
+
+            for (const alt of alternatives) {
+              try {
+                el = document.querySelector(alt) as HTMLElement;
+                if (el && isVisible(el)) return el;
+              } catch { }
+            }
+
+            return null;
+          };
+
+          // --- SCROLL ---
           if (act.action === 'scroll') {
             if (act.direction === 'top') window.scrollTo(0, 0);
             else if (act.direction === 'bottom') window.scrollTo(0, document.body.scrollHeight);
             else if (act.direction === 'up') window.scrollBy(0, -500);
             else window.scrollBy(0, 500);
-            return `Scrolled ${act.direction}`;
-          } else if (act.action === 'click') {
-            const el = document.querySelector(act.selector) as HTMLElement;
-            if (el) { el.click(); return `Clicked element (${act.selector})`; }
-            else return `Element not found (${act.selector})`;
-          } else if (act.action === 'type') {
-            const el = document.querySelector(act.selector) as HTMLInputElement;
-            if (el) { el.value = act.text; el.dispatchEvent(new Event('input', { bubbles: true })); return `Typed "${act.text}" into (${act.selector})`; }
-            else return `Input field not found (${act.selector})`;
+            return `✅ **Scrolled** ${act.direction}`;
           }
-          return 'Unknown action';
+
+          // --- CLICK ---
+          if (act.action === 'click') {
+            const el = findElement(act.selector);
+            if (!el) return `❌ **Click Failed:** Element not found or hidden (${act.selector})`;
+
+            el.scrollIntoView({ behavior: 'instant', block: 'center' });
+
+            // Full click simulation
+            el.focus();
+            ['mousedown', 'mouseup', 'click'].forEach(eventType => {
+              el.dispatchEvent(new MouseEvent(eventType, { view: window, bubbles: true, cancelable: true, buttons: 1 }));
+            });
+
+            // If it's a link, check if href exists
+            if (el.tagName === 'A' && (el as HTMLAnchorElement).href) {
+              return `✅ **Clicked** link: ${(el as HTMLAnchorElement).href.substring(0, 50)}...`;
+            }
+            return `✅ **Clicked** (${act.selector})`;
+          }
+
+          // --- TYPE ---
+          if (act.action === 'type') {
+            const el = findElement(act.selector) as HTMLInputElement | HTMLTextAreaElement;
+            if (!el) return `❌ **Type Failed:** Input not found (${act.selector})`;
+
+            el.scrollIntoView({ behavior: 'instant', block: 'center' });
+            el.focus();
+            el.click(); // Ensure focus
+
+            // Clear existing value
+            el.value = '';
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+
+            // Set new value using native setter for React compatibility
+            const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+              el.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype,
+              "value"
+            )?.set;
+
+            if (nativeInputValueSetter) {
+              nativeInputValueSetter.call(el, act.text);
+            } else {
+              el.value = act.text;
+            }
+
+            // Dispatch events
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+
+            // Verify
+            if (el.value === act.text) {
+              return `✅ **Typed** "${act.text}" into (${act.selector})`;
+            }
+            return `⚠️ **Type Partial:** Typed but value is "${el.value}" (expected "${act.text}")`;
+          }
+
+          // --- PRESS KEY (Enter, Tab, Escape, etc.) ---
+          if (act.action === 'press_key') {
+            const key = act.key?.toLowerCase() || 'enter';
+            const activeElement = act.selector
+              ? (findElement(act.selector) || document.activeElement)
+              : document.activeElement;
+
+            if (!activeElement) return `❌ **Press Key Failed:** No active element`;
+
+            const keyMap: Record<string, { key: string; code: string; keyCode: number }> = {
+              'enter': { key: 'Enter', code: 'Enter', keyCode: 13 },
+              'tab': { key: 'Tab', code: 'Tab', keyCode: 9 },
+              'escape': { key: 'Escape', code: 'Escape', keyCode: 27 },
+              'backspace': { key: 'Backspace', code: 'Backspace', keyCode: 8 },
+              'arrowdown': { key: 'ArrowDown', code: 'ArrowDown', keyCode: 40 },
+              'arrowup': { key: 'ArrowUp', code: 'ArrowUp', keyCode: 38 },
+            };
+
+            const keyInfo = keyMap[key] || { key: key, code: key, keyCode: 0 };
+
+            ['keydown', 'keypress', 'keyup'].forEach(eventType => {
+              activeElement.dispatchEvent(new KeyboardEvent(eventType, {
+                key: keyInfo.key,
+                code: keyInfo.code,
+                keyCode: keyInfo.keyCode,
+                which: keyInfo.keyCode,
+                bubbles: true,
+                cancelable: true,
+              }));
+            });
+
+            // For Enter on forms, also try to submit
+            if (key === 'enter') {
+              const form = (activeElement as HTMLElement).closest?.('form');
+              if (form) {
+                form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+              }
+            }
+
+            return `✅ **Pressed** ${keyInfo.key} key`;
+          }
+
+          // --- TYPE AND SUBMIT (Convenience action: type + Enter) ---
+          if (act.action === 'type_and_submit') {
+            const el = findElement(act.selector) as HTMLInputElement;
+            if (!el) return `❌ **Type Failed:** Input not found (${act.selector})`;
+
+            el.scrollIntoView({ behavior: 'instant', block: 'center' });
+            el.focus();
+            el.click();
+            el.value = '';
+
+            const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+              el.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype,
+              "value"
+            )?.set;
+
+            if (nativeInputValueSetter) nativeInputValueSetter.call(el, act.text);
+            else el.value = act.text;
+
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+
+            // Press Enter
+            ['keydown', 'keypress', 'keyup'].forEach(eventType => {
+              el.dispatchEvent(new KeyboardEvent(eventType, {
+                key: 'Enter', code: 'Enter', keyCode: 13, which: 13,
+                bubbles: true, cancelable: true,
+              }));
+            });
+
+            // Try form submit
+            const form = el.closest?.('form');
+            if (form) form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+
+            return `✅ **Typed and Submitted** "${act.text}"`;
+          }
+
+          return `❓ Unknown action: ${act.action}`;
         },
         args: [action]
       });
-      return `⚡ **Action:** ${results[0]?.result || 'Action executed'}`;
+
+      const result = results[0]?.result || '❓ No result';
+      console.log("📍 Action Result:", result);
+
+      // Wait after actions that might trigger navigation
+      if (action.action === 'click' || action.action === 'press_key' || action.action === 'type_and_submit') {
+        console.log("⏳ Waiting for potential page load...");
+        await new Promise(r => setTimeout(r, 2000));
+        // Check if page is still loading
+        let attempts = 0;
+        while (attempts < 10) {
+          const t = await chrome.tabs.get(tab.id);
+          if (t.status === 'complete') break;
+          await new Promise(r => setTimeout(r, 500));
+          attempts++;
+        }
+      }
+
+      return result;
     } catch (e: any) {
-      return `⚠️ **Action Failed:** ${e.message || "Cannot execute script on this page (likely restricted)."}`;
+      const error = `❌ **Action Failed:** ${e.message || "Cannot execute on this page."}`;
+      console.error(error);
+      return error;
     }
   };
 
@@ -413,14 +656,51 @@ function MainApp() {
 
             // Try to get page content, handle restricted pages
             let pageContent = "";
-            try {
-              const [{ result }] = await chrome.scripting.executeScript({
-                target: { tabId: tab.id },
-                func: () => document.body.innerText,
-              });
-              pageContent = result || "";
-            } catch (e) {
-              pageContent = "Content inaccessible (Restricted Page e.g., New Tab, Chrome Web Store).";
+            const isRestrictedUrl = !tab.url || tab.url.startsWith('chrome://') || tab.url.startsWith('edge://') || tab.url.startsWith('about:') || tab.url.startsWith('brave://') || tab.url.startsWith('https://chrome.google.com/webstore');
+
+            if (isRestrictedUrl) {
+              pageContent = `[System Message: Restricted Page]
+You are currently on a restricted system page (${tab.url}).
+Browser security prevents reading content or executing scripts here.
+You CANNOT interact with this page (click, type, scroll).
+You CAN navigate to other URLs using the 'navigate' action.`;
+            } else {
+              try {
+                const [{ result }] = await chrome.scripting.executeScript({
+                  target: { tabId: tab.id },
+                  func: () => {
+                    // Helper to generate a useful selector
+                    const getSelector = (el: Element): string => {
+                      if (el.id) return `#${el.id}`;
+                      if (el.getAttribute('name')) return `${el.tagName.toLowerCase()}[name="${el.getAttribute('name')}"]`;
+                      if (el.getAttribute('aria-label')) return `${el.tagName.toLowerCase()}[aria-label="${el.getAttribute('aria-label')}"]`;
+                      if (el.className && typeof el.className === 'string') return `.${el.className.split(' ').join('.')}`;
+                      return el.tagName.toLowerCase();
+                    };
+
+                    // Find interactive elements
+                    const interactive = Array.from(document.querySelectorAll('input, textarea, button, a, select, [role="button"]'))
+                      .filter(el => {
+                        const style = window.getComputedStyle(el);
+                        return style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
+                      })
+                      .map(el => {
+                        const tag = el.tagName.toLowerCase();
+                        const type = el.getAttribute('type') || '';
+                        const label = el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.textContent?.slice(0, 50).trim() || '';
+                        const selector = getSelector(el);
+                        return `[${tag}${type ? ` type="${type}"` : ''}] Selector: ${selector} | Label: "${label}"`;
+                      })
+                      .slice(0, 100) // Limit to top 100 elements to save tokens
+                      .join('\n');
+
+                    return `Page Title: ${document.title}\n\nInteractive Elements:\n${interactive}\n\nVisible Text:\n${document.body.innerText.slice(0, 2000)}`;
+                  },
+                });
+                pageContent = result || "";
+              } catch (e) {
+                pageContent = "Content inaccessible (Restricted Page e.g., New Tab, Chrome Web Store).";
+              }
             }
 
             context = {
@@ -430,13 +710,13 @@ function MainApp() {
               screenshot: screenshotUrl,
               openTabs: allTabs.map(t => ({ id: t.id!, title: t.title || 'Untitled', url: t.url || '' }))
             };
-          } catch (e) {
+          } catch (e: any) {
             console.error("Context capture failed:", e);
             // Proceed without full context if capture fails
             context = {
               title: tab.title || 'Unknown',
               url: tab.url || 'Unknown',
-              content: "Failed to capture context.",
+              content: `Failed to capture context. Error: ${e.message}. (You might be on a restricted page like chrome://newtab or the Web Store. You can still navigate to other URLs.)`,
               openTabs: allTabs.map(t => ({ id: t.id!, title: t.title || 'Untitled', url: t.url || '' }))
             };
           }
@@ -450,17 +730,36 @@ function MainApp() {
         if (selectedModel === 'perplexity') currentApiKey = perplexityApiKey;
         if (selectedModel === 'custom') currentApiKey = customApiKey;
 
-        // Send request to AI provider
-        const responseText = await sendMessage(
-          selectedModel,
-          currentApiKey,
-          currentHistory,
-          loopCount === 0 ? text : "Proceed with the next step based on the previous action result.",
-          context,
-          { baseUrl: customBaseUrl, modelName: customModelName },
-          memory,
-          selectedModelId // Pass the specific model ID
-        );
+        // Send request to AI provider with Auto-Retry for Rate Limits
+        let responseText = "";
+        let retryCount = 0;
+        const MAX_RETRIES = 3;
+
+        while (retryCount <= MAX_RETRIES) {
+          try {
+            responseText = await sendMessage(
+              selectedModel,
+              currentApiKey,
+              currentHistory,
+              loopCount === 0 ? text : "Proceed with the next step based on the previous action result.",
+              context,
+              { baseUrl: customBaseUrl, modelName: customModelName },
+              memory,
+              selectedModelId
+            );
+            break; // Success, exit retry loop
+          } catch (error: any) {
+            if (retryCount < MAX_RETRIES && (error.message.includes("429") || error.message.includes("quota") || error.message.includes("rate limit"))) {
+              console.warn(`Rate limit hit. Retrying in 4 seconds... (Attempt ${retryCount + 1}/${MAX_RETRIES})`);
+              // Extract wait time if available, otherwise default to 4s
+              const waitTime = 4000;
+              await new Promise(resolve => setTimeout(resolve, waitTime));
+              retryCount++;
+            } else {
+              throw error; // Re-throw other errors or if max retries reached
+            }
+          }
+        }
 
         console.debug("Raw Response:", responseText);
 
@@ -475,10 +774,8 @@ function MainApp() {
             const parsed = JSON.parse(jsonMatch[0]);
             console.debug("Parsed JSON:", parsed);
             thought = parsed.thought || "";
-            // Fix: Check if parsed.action exists, then assign the WHOLE parsed object to action
-            // The system prompt defines the structure as { "action": "navigate", "url": ... }
             if (parsed.action) {
-              action = parsed;
+              action = parsed.action;
             }
 
             if (parsed.response) {
@@ -486,8 +783,6 @@ function MainApp() {
             } else if (parsed.thought) {
               responseContent = parsed.thought;
             }
-            // If neither response nor thought is present, we might keep the original text, 
-            // but usually the thought should be there if it's our JSON format.
           }
         } catch (e) {
           console.log("Failed to parse JSON, treating as raw text");
@@ -531,10 +826,25 @@ function MainApp() {
       setMessages(prev => [...prev, responseMessage]);
 
     } catch (error: any) {
+      console.error("Processing Error:", error);
+      let errorMessage = "An unexpected error occurred.";
+
+      if (error.message.includes("API Key is missing")) {
+        errorMessage = "⚠️ API Key is missing. Please go to Settings and enter your API key.";
+      } else if (error.message.includes("401") || error.message.includes("unauthorized")) {
+        errorMessage = "🚫 Authentication failed. Please check your API key in Settings.";
+      } else if (error.message.includes("429") || error.message.includes("quota")) {
+        errorMessage = "⏳ Rate limit exceeded. Please try again later or check your API quota.";
+      } else if (error.message.includes("JSON")) {
+        errorMessage = "🤖 The AI returned an invalid response. Please try asking again.";
+      } else {
+        errorMessage = `❌ Error: ${error.message || "Failed to process request."}`;
+      }
+
       setMessages(prev => [...prev, {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: `Error: ${error.message || "Failed to process request."}`,
+        content: errorMessage,
         timestamp: Date.now(),
       }]);
     } finally {
@@ -568,11 +878,22 @@ function MainApp() {
   if (hasConsented === null) return <div className="h-screen bg-gray-900 flex items-center justify-center text-white">Loading...</div>;
 
   return (
-    <div className="flex h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 font-sans transition-colors duration-300 overflow-hidden">
+    <div className="flex h-full w-full bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 font-sans transition-colors duration-300 overflow-hidden relative">
       {!hasConsented && <TermsModal onAccept={handleAcceptTerms} />}
 
+      {/* Mobile Overlay */}
+      {showHistory && (
+        <div
+          className="fixed inset-0 bg-black/50 z-30 sm:hidden backdrop-blur-sm transition-opacity"
+          onClick={() => setShowHistory(false)}
+        />
+      )}
+
       {/* History Sidebar */}
-      <div className={cn("fixed inset-y-0 left-0 z-20 w-64 bg-gray-100 dark:bg-gray-900 border-r border-gray-200 dark:border-gray-800 transform transition-transform duration-300 ease-in-out flex flex-col", showHistory ? "translate-x-0" : "-translate-x-full")}>
+      <div className={cn(
+        "fixed inset-y-0 left-0 z-40 w-64 bg-gray-100 dark:bg-gray-900 border-r border-gray-200 dark:border-gray-800 transform transition-transform duration-300 ease-in-out flex flex-col shadow-2xl sm:shadow-none",
+        showHistory ? "translate-x-0" : "-translate-x-full"
+      )}>
         <div className="p-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between">
           <h2 className="font-semibold text-sm">Chat History</h2>
           <button onClick={() => setShowHistory(false)} className="p-1 hover:bg-gray-200 dark:hover:bg-gray-800 rounded"><X className="w-4 h-4" /></button>
@@ -611,28 +932,35 @@ function MainApp() {
       </div>
 
       {/* Main Content */}
-      <div className={cn("flex-1 flex flex-col h-full transition-all duration-300", showHistory ? "ml-64" : "ml-0")}>
+      <div className={cn(
+        "flex-1 flex flex-col h-full w-full transition-all duration-300 relative",
+        showHistory ? "sm:ml-64" : "ml-0"
+      )}>
         {/* Header */}
-        <header className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-800 bg-white/50 dark:bg-gray-900/50 backdrop-blur-sm sticky top-0 z-10">
-          <div className="flex items-center gap-2">
-            <button onClick={() => setShowHistory(!showHistory)} className="p-2 hover:bg-gray-200 dark:hover:bg-gray-800 rounded-full transition-colors"><History className="w-5 h-5 text-gray-600 dark:text-gray-400" /></button>
-            <img src="logo.png" alt="Logo" className="w-8 h-8 rounded-lg shadow-lg" />
-            <h1 className="font-bold text-lg bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent hidden sm:block">AI Agent</h1>
+        <header className="flex items-center justify-between p-3 border-b border-gray-200 dark:border-gray-800 bg-white/50 dark:bg-gray-900/50 backdrop-blur-sm sticky top-0 z-20">
+          <div className="flex items-center gap-2 overflow-hidden">
+            <button onClick={() => setShowHistory(!showHistory)} className="p-2 hover:bg-gray-200 dark:hover:bg-gray-800 rounded-lg transition-colors shrink-0">
+              <Menu className="w-5 h-5" />
+            </button>
+            <div className="flex items-center gap-2 overflow-hidden">
+              <img src="/icons/icon48.png" alt="Logo" className="w-6 h-6 rounded-full shrink-0" />
+              <h1 className="font-bold text-lg bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-purple-600 truncate">AI Agent</h1>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <button onClick={handleNewChat} className="p-2 hover:bg-gray-200 dark:hover:bg-gray-800 rounded-full transition-colors sm:hidden"><PlusCircle className="w-5 h-5 text-blue-600 dark:text-blue-400" /></button>
-            <button onClick={toggleTheme} className="p-2 hover:bg-gray-200 dark:hover:bg-gray-800 rounded-full transition-colors">{theme === 'dark' ? <Sun className="w-5 h-5 text-yellow-400" /> : <Moon className="w-5 h-5 text-gray-600" />}</button>
-            <button onClick={() => setShowSettings(!showSettings)} className="p-2 hover:bg-gray-200 dark:hover:bg-gray-800 rounded-full transition-colors"><Settings className="w-5 h-5 text-gray-600 dark:text-gray-400" /></button>
+          <div className="flex items-center gap-2 shrink-0">
+            <button onClick={() => setShowSettings(true)} className="p-2 hover:bg-gray-200 dark:hover:bg-gray-800 rounded-lg transition-colors">
+              <Settings className="w-5 h-5" />
+            </button>
           </div>
         </header>
 
         {/* Settings Panel */}
         {showSettings && (
-          <div className="absolute inset-0 z-50 bg-gray-100 dark:bg-gray-900 p-6 overflow-y-auto animate-in slide-in-from-bottom-5">
-            <div className="max-w-2xl mx-auto bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6">
+          <div className="absolute inset-0 z-50 bg-gray-100/95 dark:bg-gray-900/95 backdrop-blur-sm p-6 overflow-y-auto animate-in fade-in zoom-in-95 duration-200">
+            <div className="max-w-2xl mx-auto bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-6 border border-gray-200 dark:border-gray-700">
               <div className="flex justify-between items-center mb-6">
-                <h2 className="text-xl font-bold">Settings</h2>
-                <button onClick={() => setShowSettings(false)} className="p-2 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-full"><X className="w-5 h-5" /></button>
+                <h2 className="text-xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">Settings</h2>
+                <button onClick={() => setShowSettings(false)} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors duration-200"><X className="w-5 h-5" /></button>
               </div>
 
               {/* Sponsored Link in Settings */}
@@ -765,11 +1093,20 @@ function MainApp() {
                     <span className="font-semibold not-italic">Thought:</span> {msg.thought}
                   </div>
                 )}
-                <div className={cn("rounded-2xl p-4 shadow-sm", msg.role === 'user' ? "bg-blue-600 text-white rounded-tr-none" : "bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-tl-none")}>
+                <div className={cn("rounded-2xl p-4 shadow-sm relative group", msg.role === 'user' ? "bg-blue-600 text-white rounded-tr-none" : "bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-tl-none")}>
                   {msg.image && (
                     <img src={msg.image} alt="Uploaded" className="max-w-full h-auto rounded-lg mb-2" />
                   )}
                   <MarkdownMessage content={msg.content} />
+
+                  {/* Copy Button */}
+                  <button
+                    onClick={() => copyToClipboard(msg.content)}
+                    className="absolute top-2 right-2 p-1 rounded bg-black/10 hover:bg-black/20 dark:bg-white/10 dark:hover:bg-white/20 opacity-0 group-hover:opacity-100 transition-opacity"
+                    title="Copy"
+                  >
+                    <Copy className="w-3 h-3" />
+                  </button>
                 </div>
                 {msg.options && (
                   <div className="mt-2 flex flex-wrap gap-2">
@@ -836,12 +1173,4 @@ function MainApp() {
   );
 }
 
-function App() {
-  return (
-    <ThemeProvider>
-      <MainApp />
-    </ThemeProvider>
-  );
-}
-
-export default App;
+export default MainApp;

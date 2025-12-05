@@ -1,4 +1,3 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import OpenAI from "openai";
 
 export type ModelType = 'gemini' | 'openai' | 'perplexity' | 'claude' | 'custom';
@@ -49,7 +48,7 @@ export async function sendMessage(
         } else if (model === 'claude') {
             return await sendToClaude(apiKey, history, newMessage, context, memoryContext, modelId);
         } else if (model === 'perplexity') {
-            return await sendToPerplexity(apiKey, history, newMessage, modelId);
+            return await sendToPerplexity(apiKey, history, newMessage, context, memoryContext, modelId);
         } else if (model === 'custom') {
             return await sendToCustom(apiKey, customConfig?.baseUrl || '', customConfig?.modelName || '', history, newMessage, context, memoryContext);
         }
@@ -61,127 +60,184 @@ export async function sendMessage(
 }
 
 const SYSTEM_PROMPT = `
-You are an advanced autonomous browser agent. Your goal is to help the user by browsing the web, researching, and performing actions.
+You are an advanced, autonomous browser agent and a helpful AI assistant.
+Your goal is to understand the user's intent and fulfill it efficiently using the available browser actions.
 
 **Core Instructions:**
-1.  **Analyze Intent First:** Determine if the user wants to:
-    *   **Interact with the current page** (e.g., "click login", "summarize this"). -> **PRIORITY: HIGH**. Use [Current Page Context].
-    *   **Navigate/Search** (e.g., "open google", "search for X"). -> Perform the first navigation/search step.
-    *   **Ask a General Question** (e.g., "explain AI"). -> Answer directly in the "thought" field.
 
-2.  **Prioritize Context:** ALWAYS check the [Current Page Context] (URL, Title, Content) before deciding. If the user asks "what is this?", refer to the current page.
+1.  **Understand Intent:**
+    *   **Casual Chat:** For greetings or questions, use \`response\` field. No browser action needed.
+    *   **Browser Tasks:** For "search", "click", "go to", "fill", etc., use an \`action\`.
 
-3.  **Chain of Thought (CoT):** Plan your actions step-by-step.
-    *   If the user says "search how to code on google" and you are ALREADY on google.com, DO NOT navigate again. Just fill the search box.
-    *   If you are NOT on google.com, first action is \`navigate\` to google.com.
+2.  **Read the Page Context:**
+    You receive [Current Page Context] with:
+    - **URL:** Where you are now.
+    - **Interactive Elements:** A list of buttons, inputs, links on the page WITH their selectors.
+    
+    **USE THIS LIST** to find the right element to interact with. Don't guess selectors - look at what's available!
 
-**Output Format:**
-You must output your response in a strict JSON format.
-- \`thought\`: Your reasoning. Explain WHY you are taking this action or giving this answer.
-- \`action\`: The action object (if performing an action).
-- \`response\`: The answer text (if answering a question).
+3.  **Action Result Feedback:**
+    *   **✅ SUCCESS:** Proceed to next step.
+    *   **❌/⚠️ FAILURE:** Your action failed. Look at the Interactive Elements list again and try a different selector.
 
-**Goal:**
-- **Efficiency is Key.** Do not perform unnecessary navigations if the user is already on the correct page.
-- If the user asks a compound request, perform the **first necessary action** only.
+4.  **Smart Search Strategies:**
+    *   **For Google/Bing:** Use \`{ "action": "search", "query": "..." }\` - it's the most reliable.
+    *   **For other sites:** 
+        1. Find the search input in Interactive Elements
+        2. Use \`type\` to enter text
+        3. Look for a submit button (labels like "Search", "Go", "Submit", "Find", "🔍", etc.) and \`click\` it
+        4. OR use \`press_key\` with "enter" if no button is visible
 
-**Supported Actions (Output as JSON):**
-- { "action": "click", "selector": "css_selector" }
-- { "action": "type", "selector": "css_selector", "text": "text_to_type" }
-- { "action": "scroll", "direction": "up" | "down" | "top" | "bottom" }
-- { "action": "navigate", "url": "https://..." }
-- { "action": "search", "query": "search_query" } (Use this for direct address bar search)
-- { "action": "new_tab", "url": "https://..." }
-- { "action": "switch_tab", "tabId": 123 }
-- { "action": "ask_selection", "question": "Clarification question", "options": [{ "label": "Option A", "value": "id_a" }] }
-- { "action": "close_tab", "tabId": 123 }
-- { "action": "get_tab_content", "tabId": 123 }
+5.  **Finding Elements:**
+    Look at the Interactive Elements list. Examples:
+    - \`[button] Selector: #search-btn | Label: "Search"\` → Click with \`{ "action": "click", "selector": "#search-btn" }\`
+    - \`[input type="text"] Selector: input[name="q"] | Label: "Search..."\` → Type with \`{ "action": "type", "selector": "input[name='q']", "text": "query" }\`
+    - \`[a] Selector: .nav-link | Label: "Home"\` → Click to navigate
 
-**Important:**
-- **ALWAYS** output a valid JSON object.
-- **DO NOT** include any text outside the JSON object. No conversational filler.
-- If you are answering a question, put the answer in the "thought" or "response" field of the JSON.
-- **Check the URL** in [Current Page Context] before navigating.
+6.  **Output Format (JSON only):**
+    *   \`thought\`: Your reasoning
+    *   \`action\`: Browser action object (optional)
+    *   \`response\`: Text reply to user (optional)
+
+**Supported Actions:**
+- \`{ "action": "search", "query": "..." }\` - Direct Google search (most reliable for search engines)
+- \`{ "action": "navigate", "url": "..." }\` - Go to URL
+- \`{ "action": "click", "selector": "..." }\` - Click element
+- \`{ "action": "type", "selector": "...", "text": "..." }\` - Type in input
+- \`{ "action": "press_key", "key": "enter|tab|escape" }\` - Press keyboard key
+- \`{ "action": "type_and_submit", "selector": "...", "text": "..." }\` - Type and press Enter
+- \`{ "action": "scroll", "direction": "up|down|top|bottom" }\`
+- \`{ "action": "new_tab", "url": "..." }\`
+- \`{ "action": "switch_tab", "tabId": N }\`
+- \`{ "action": "close_tab", "tabId": N }\`
+
+**Examples:**
+
+User: "Search for cats on this website"
+Your analysis: Looking at Interactive Elements, I see:
+- [input type="text"] Selector: #search-input | Label: "Search products"
+- [button] Selector: button.search-btn | Label: "Go"
+
+Response:
+{ "thought": "I'll type in the search input, then click the Go button.", "action": { "action": "type", "selector": "#search-input", "text": "cats" } }
+
+Next turn (after typing succeeds):
+{ "thought": "Now clicking the search button.", "action": { "action": "click", "selector": "button.search-btn" } }
 `;
 
 async function sendToGemini(apiKey: string, history: ChatMessage[], newMessage: string, context?: BrowserContext, memoryContext: string = "", modelId: string = "gemini-2.0-flash"): Promise<string> {
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({
-        model: modelId,
-        systemInstruction: SYSTEM_PROMPT + memoryContext
-    });
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${apiKey}`;
 
-    // Filter and map history to ensure valid Content objects
-    const validHistory = history.map(msg => {
-        const parts: any[] = [];
+    // Prepare contents
+    const contents: any[] = [];
 
-        if (msg.content && msg.content.trim() !== '') {
-            parts.push({ text: msg.content });
-        }
+    // 1. Add History
+    // Gemini expects: { role: "user" | "model", parts: [{ text: "..." }] }
+    // We need to merge consecutive messages of the same role if necessary, but simple mapping usually works if roles alternate.
+    // However, the system prompt is passed separately in 'systemInstruction'.
 
-        // Gemini does not support base64 images in history efficiently yet.
-        // We filter out empty messages to prevent API errors.
+    // Filter empty messages
+    const validHistory = history.filter(msg => msg.content && msg.content.trim() !== '');
 
-        if (parts.length === 0) {
-            return null; // Filter out empty messages
-        }
-
-        return {
+    validHistory.forEach(msg => {
+        contents.push({
             role: msg.role === 'user' ? 'user' : 'model',
-            parts: parts,
-        };
-    }).filter(msg => msg !== null) as { role: string, parts: any[] }[];
-
-    const chat = model.startChat({
-        history: validHistory,
+            parts: [{ text: msg.content }]
+        });
     });
 
-    let promptParts: any[] = [];
-
-    if (newMessage && newMessage.trim() !== '') {
-        promptParts.push({ text: newMessage });
-    }
-
+    // 2. Add New Message + Context
+    let finalUserMessage = newMessage;
     if (context) {
-        let contextMsg = `\n\n[Current Page Context]\nTitle: ${context.title}\nURL: ${context.url}\nContent: ${context.content.substring(0, 20000)}...`; // Increased limit
-
+        let contextMsg = `\n\n[Current Page Context]\nTitle: ${context.title}\nURL: ${context.url}\nContent: ${context.content.substring(0, 25000)}...`; // Increased limit for Gemini
         if (context.openTabs && context.openTabs.length > 0) {
             contextMsg += `\n\n[Open Tabs]\n${context.openTabs.map(t => `- ID: ${t.id}, Title: "${t.title}", URL: ${t.url}`).join('\n')}`;
         }
+        finalUserMessage += contextMsg;
+    }
 
-        promptParts.push({ text: contextMsg });
+    // Add the new message as a user turn
+    const lastContent = contents[contents.length - 1];
+    if (lastContent && lastContent.role === 'user') {
+        // Merge with previous user message if it exists (Gemini doesn't like consecutive user messages sometimes, though it's better now)
+        // But to be safe and logical, we append to the conversation.
+        // Actually, 'contents' represents the history. The new message is the *next* turn.
+        // If the last message in history was user, we should probably merge or just push.
+        // Let's push a new turn.
+        contents.push({
+            role: 'user',
+            parts: [{ text: finalUserMessage }]
+        });
+    } else {
+        contents.push({
+            role: 'user',
+            parts: [{ text: finalUserMessage }]
+        });
+    }
 
-        if (context.screenshot) {
-            try {
-                const base64Data = context.screenshot.split(',')[1];
-                if (base64Data) {
-                    promptParts.push({
-                        inlineData: {
-                            mimeType: "image/png",
-                            data: base64Data
-                        }
-                    });
-                }
-            } catch (e) {
-                console.error("Error processing screenshot:", e);
+    // Handle Screenshot (Multimodal)
+    if (context?.screenshot) {
+        // Attach to the last user message (which is the one we just added)
+        const lastMsg = contents[contents.length - 1];
+        try {
+            const base64Data = context.screenshot.split(',')[1];
+            if (base64Data) {
+                lastMsg.parts.push({
+                    inline_data: {
+                        mime_type: "image/png",
+                        data: base64Data
+                    }
+                });
             }
+        } catch (e) {
+            console.error("Error processing screenshot for Gemini:", e);
         }
     }
 
-    // Ensure promptParts is not empty
-    if (promptParts.length === 0) {
-        promptParts.push({ text: "..." });
-    }
+    const payload = {
+        contents: contents,
+        systemInstruction: {
+            parts: [{ text: SYSTEM_PROMPT + memoryContext }]
+        },
+        generationConfig: {
+            temperature: 0.7,
+            maxOutputTokens: 2048,
+            responseMimeType: "application/json" // Force JSON output
+        }
+    };
 
-    const result = await chat.sendMessage(promptParts);
-    const response = await result.response;
-    return response.text();
+    try {
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(payload)
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(`Gemini API Error: ${response.status} ${response.statusText} - ${JSON.stringify(errorData)}`);
+        }
+
+        const data = await response.json();
+
+        if (data.candidates && data.candidates.length > 0 && data.candidates[0].content && data.candidates[0].content.parts.length > 0) {
+            return data.candidates[0].content.parts[0].text;
+        } else {
+            return "{}"; // Empty JSON if no response
+        }
+
+    } catch (error: any) {
+        console.error("Gemini Fetch Error:", error);
+        throw error;
+    }
 }
 
 async function sendToOpenAI(apiKey: string, history: ChatMessage[], newMessage: string, context?: BrowserContext, memoryContext: string = "", modelId: string = "gpt-4o"): Promise<string> {
     const openai = new OpenAI({
         apiKey: apiKey,
-        baseURL: 'https://api.openai.com/v1', // Explicitly set latest API URL
+        baseURL: 'https://api.openai.com/v1',
         dangerouslyAllowBrowser: true
     });
 
@@ -222,15 +278,36 @@ async function sendToOpenAI(apiKey: string, history: ChatMessage[], newMessage: 
     const completion = await openai.chat.completions.create({
         messages: messages,
         model: modelId,
-        response_format: { type: "json_object" } // Force JSON for better agentic behavior
+        response_format: { type: "json_object" }
     });
 
     return completion.choices[0].message.content || "{}";
 }
 
 async function sendToClaude(apiKey: string, history: ChatMessage[], newMessage: string, context?: BrowserContext, memoryContext: string = "", modelId: string = "claude-3-5-sonnet-20240620"): Promise<string> {
-    // Anthropic API Direct Call
-    const messages = history.map(msg => ({
+    const alternatingHistory: { role: 'user' | 'assistant'; content: string }[] = [];
+    const cleanHistory = history.filter(msg => msg.content && msg.content.trim() !== '');
+
+    if (cleanHistory.length > 0) {
+        let lastRole: 'user' | 'assistant' = cleanHistory[0].role === 'user' ? 'user' : 'assistant';
+        let currentContent = cleanHistory[0].content;
+
+        for (let i = 1; i < cleanHistory.length; i++) {
+            const msg = cleanHistory[i];
+            const role: 'user' | 'assistant' = msg.role === 'user' ? 'user' : 'assistant';
+
+            if (role === lastRole) {
+                currentContent += "\n\n" + msg.content;
+            } else {
+                alternatingHistory.push({ role: lastRole, content: currentContent });
+                lastRole = role;
+                currentContent = msg.content;
+            }
+        }
+        alternatingHistory.push({ role: lastRole, content: currentContent });
+    }
+
+    const messages = alternatingHistory.map(msg => ({
         role: msg.role,
         content: msg.content
     }));
@@ -298,6 +375,8 @@ async function sendToPerplexity(
     apiKey: string,
     history: { role: 'user' | 'assistant'; content: string }[],
     message: string,
+    context?: BrowserContext,
+    memoryContext: string = "",
     modelId: string = 'sonar'
 ): Promise<string> {
     // Filter out empty messages first
@@ -333,21 +412,30 @@ async function sendToPerplexity(
         alternatingHistory.shift();
     }
 
+    // Prepare Context String
+    let contextText = "";
+    if (context) {
+        contextText = `\n\n[Current Page Context]\nTitle: ${context.title}\nURL: ${context.url}\nContent: ${context.content.substring(0, 15000)}...`;
+        if (context.openTabs && context.openTabs.length > 0) {
+            contextText += `\n\n[Open Tabs]\n${context.openTabs.map(t => `- ID: ${t.id}, Title: "${t.title}", URL: ${t.url}`).join('\n')}`;
+        }
+    }
+
     let messages;
     // Check if the last message in history is from 'user'
     if (alternatingHistory.length > 0 && alternatingHistory[alternatingHistory.length - 1].role === 'user') {
-        // Merge the new message into the last user message to avoid User -> User sequence
+        // Merge the new message AND context into the last user message
         const lastMsg = alternatingHistory.pop()!;
         messages = [
-            { role: 'system', content: SYSTEM_PROMPT },
+            { role: 'system', content: SYSTEM_PROMPT + memoryContext },
             ...alternatingHistory,
-            { role: 'user', content: lastMsg.content + "\n\n" + message }
+            { role: 'user', content: lastMsg.content + "\n\n" + message + contextText }
         ];
     } else {
         messages = [
-            { role: 'system', content: SYSTEM_PROMPT },
+            { role: 'system', content: SYSTEM_PROMPT + memoryContext },
             ...alternatingHistory,
-            { role: 'user', content: message }
+            { role: 'user', content: message + contextText }
         ];
     }
 
@@ -361,9 +449,6 @@ async function sendToPerplexity(
         body: JSON.stringify({
             model: modelId,
             messages: messages,
-            // Removed extra parameters that might cause issues or empty responses
-            // if not supported by specific models.
-            // Keeping it simple is safer.
             stream: false
         })
     });
