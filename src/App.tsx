@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
-import { Send, Settings, Bot, User, Loader2, PlusCircle, Trash2, Plus, MessageSquare, X, Edit2, Check, Menu, Copy, Bell, Clock, CheckCircle, Image as ImageIcon } from 'lucide-react';
+import { Send, Settings, Bot, User, Loader2, PlusCircle, Trash2, Plus, MessageSquare, X, Edit2, Check, Menu, Copy, Bell, Clock, CheckCircle, Paperclip, FileText } from 'lucide-react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { sendMessage } from './lib/ai';
-import type { BrowserContext, MemoryItem } from './lib/ai';
+import type { BrowserContext, MemoryItem, Attachment } from './lib/ai';
 import { TermsModal } from './components/TermsModal';
 import { MarkdownMessage } from './components/MarkdownMessage';
 import { AdBanner } from './components/AdBanner';
@@ -21,6 +21,7 @@ type Message = {
   timestamp: number;
   options?: { label: string; value: string }[];
   thought?: string;
+  attachments?: Attachment[];
 };
 
 type ChatSession = {
@@ -76,7 +77,7 @@ function MainApp() {
   // Session Management
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState('');
-  const [uploadedImages, setUploadedImages] = useState<string[]>([]); // Base64 images, max 5
+  const [attachments, setAttachments] = useState<Attachment[]>([]); // Generic attachments
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -333,29 +334,37 @@ function MainApp() {
 
   const handleNewChat = () => createNewSession();
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files) return;
 
-    const remainingSlots = 5 - uploadedImages.length;
+    const remainingSlots = 5 - attachments.length;
     const filesToProcess = Array.from(files).slice(0, remainingSlots);
 
     filesToProcess.forEach(file => {
+      const reader = new FileReader();
+
       if (file.type.startsWith('image/')) {
-        const reader = new FileReader();
         reader.onload = (event) => {
           const base64 = event.target?.result as string;
-          setUploadedImages(prev => [...prev.slice(0, 4), base64]);
+          setAttachments(prev => [...prev, { type: 'image', content: base64, name: file.name, mimeType: file.type }]);
         };
         reader.readAsDataURL(file);
+      } else {
+        // Assume text-based for other files for now (expand logic later for specific types if needed)
+        reader.onload = (event) => {
+          const text = event.target?.result as string;
+          setAttachments(prev => [...prev, { type: 'text', content: text, name: file.name, mimeType: file.type }]);
+        };
+        reader.readAsText(file);
       }
     });
 
     e.target.value = '';
   };
 
-  const removeUploadedImage = (index: number) => {
-    setUploadedImages(prev => prev.filter((_, i) => i !== index));
+  const removeAttachment = (index: number) => {
+    setAttachments(prev => prev.filter((_, i) => i !== index));
   };
 
   const removeMemory = (index: number) => {
@@ -747,12 +756,13 @@ function MainApp() {
       role: isUser ? 'user' : 'assistant',
       content: text,
       timestamp: Date.now(),
+      attachments: isUser ? [...attachments] : undefined, // Store attachments with user message
     };
 
     setMessages(prev => [...prev, newMessage]);
     if (isUser) {
       setInput('');
-      setUploadedImages([]); // Clear images after sending
+      setAttachments([]); // Clear attachments after sending
     }
     setIsLoading(true);
     setCurrentThought('');
@@ -868,7 +878,7 @@ You CAN navigate to other URLs using the 'navigate' action.`;
               { baseUrl: customBaseUrl, modelName: customModelName },
               memory,
               selectedModelId,
-              loopCount === 0 ? uploadedImages : [] // Only send images on first message
+              loopCount === 0 ? attachments : [] // Only send attachments on first message
             );
             break; // Success, exit retry loop
           } catch (error: any) {
@@ -1396,6 +1406,21 @@ You CAN navigate to other URLs using the 'navigate' action.`;
                   </div>
                 )}
                 <div className={cn("rounded-2xl p-4 shadow-sm relative group", msg.role === 'user' ? "bg-blue-600 text-white rounded-tr-none" : "bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-tl-none")}>
+                  {/* Display Attachments for User Messages */}
+                  {msg.role === 'user' && msg.attachments && msg.attachments.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mb-2">
+                      {msg.attachments.map((att, idx) => (
+                        att.type === 'image' ? (
+                          <img key={idx} src={att.content} alt={att.name} className="max-w-[100px] max-h-[100px] rounded-lg border border-white/30" />
+                        ) : (
+                          <div key={idx} className="flex items-center gap-1 px-2 py-1 bg-white/20 rounded text-xs">
+                            <FileText className="w-3 h-3" />
+                            <span className="truncate max-w-[80px]">{att.name}</span>
+                          </div>
+                        )
+                      ))}
+                    </div>
+                  )}
                   {msg.image && (
                     <img src={msg.image} alt="Uploaded" className="max-w-full h-auto rounded-lg mb-2" />
                   )}
@@ -1452,21 +1477,28 @@ You CAN navigate to other URLs using the 'navigate' action.`;
 
         {/* Input Area */}
         <div className="p-4 bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-800">
-          {/* Image Previews */}
-          {uploadedImages.length > 0 && (
+          {/* Attachment Previews */}
+          {attachments.length > 0 && (
             <div className="flex gap-2 mb-3 flex-wrap">
-              {uploadedImages.map((img, idx) => (
+              {attachments.map((att, idx) => (
                 <div key={idx} className="relative group">
-                  <img src={img} alt={`Upload ${idx + 1}`} className="w-16 h-16 object-cover rounded-xl border border-gray-200 dark:border-gray-700" />
+                  {att.type === 'image' ? (
+                    <img src={att.content} alt={att.name} className="w-16 h-16 object-cover rounded-xl border border-gray-200 dark:border-gray-700" />
+                  ) : (
+                    <div className="w-16 h-16 bg-gray-100 dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 flex flex-col items-center justify-center p-1">
+                      <FileText className="w-6 h-6 text-gray-500 dark:text-gray-400 mb-1" />
+                      <span className="text-[10px] text-gray-500 dark:text-gray-400 truncate w-full text-center">{att.name}</span>
+                    </div>
+                  )}
                   <button
-                    onClick={() => removeUploadedImage(idx)}
+                    onClick={() => removeAttachment(idx)}
                     className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-lg"
                   >
                     <X className="w-3 h-3" />
                   </button>
                 </div>
               ))}
-              {uploadedImages.length < 5 && (
+              {attachments.length < 5 && (
                 <button
                   onClick={() => fileInputRef.current?.click()}
                   className="w-16 h-16 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl flex items-center justify-center text-gray-400 hover:border-blue-500 hover:text-blue-500 transition-colors"
@@ -1481,8 +1513,7 @@ You CAN navigate to other URLs using the 'navigate' action.`;
             <input
               type="file"
               ref={fileInputRef}
-              onChange={handleImageUpload}
-              accept="image/*"
+              onChange={handleFileUpload}
               multiple
               className="hidden"
             />
@@ -1490,13 +1521,13 @@ You CAN navigate to other URLs using the 'navigate' action.`;
               onClick={() => fileInputRef.current?.click()}
               className={cn(
                 "p-2 rounded-xl transition-colors",
-                uploadedImages.length > 0
+                attachments.length > 0
                   ? "text-blue-500 bg-blue-100 dark:bg-blue-900/30"
                   : "text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-gray-700"
               )}
-              title={`Add images (${uploadedImages.length}/5)`}
+              title={`Add files (${attachments.length}/5)`}
             >
-              <ImageIcon className="w-5 h-5" />
+              <Paperclip className="w-5 h-5" />
             </button>
             <textarea
               value={input}
@@ -1511,7 +1542,7 @@ You CAN navigate to other URLs using the 'navigate' action.`;
               className="flex-1 bg-transparent border-none focus:ring-0 resize-none max-h-32 py-2 text-sm"
               rows={1}
             />
-            <button onClick={handleSend} disabled={isLoading || (!input.trim() && uploadedImages.length === 0)} className="p-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg shadow-blue-600/20"><Send className="w-5 h-5" /></button>
+            <button onClick={handleSend} disabled={isLoading || (!input.trim() && attachments.length === 0)} className="p-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg shadow-blue-600/20"><Send className="w-5 h-5" /></button>
           </div>
         </div>
       </div>

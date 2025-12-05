@@ -20,6 +20,13 @@ export interface MemoryItem {
     value: string;
 }
 
+export interface Attachment {
+    type: 'image' | 'text' | 'file';
+    content: string; // Base64 for images, text content for files
+    name: string;
+    mimeType?: string;
+}
+
 export async function sendMessage(
     model: ModelType,
     apiKey: string,
@@ -29,10 +36,25 @@ export async function sendMessage(
     customConfig?: { baseUrl: string; modelName: string },
     memory?: MemoryItem[],
     modelId?: string,
-    images?: string[] // Base64 encoded images
+    attachments?: Attachment[]
 ): Promise<string> {
     if (!apiKey) {
         throw new Error("API Key is missing. Please set it in settings.");
+    }
+
+    // Intent Detection for Image Generation
+    const imageGenerationRegex = /^\/image\s+(.*)$/i;
+    const imageMatch = newMessage.match(imageGenerationRegex);
+
+    // Also check for natural language intent if model supports it (optional, but slash command is safer for now)
+    // For now, we'll stick to the slash command or explicit keywords if we want to expand later.
+
+    if (imageMatch) {
+        const imagePrompt = imageMatch[1];
+        if (!imagePrompt) {
+            return "Please provide a prompt for the image. Usage: `/image <description>`";
+        }
+        return await generateImage(apiKey, imagePrompt, model);
     }
 
     // Inject memory into system prompt or context
@@ -43,22 +65,65 @@ export async function sendMessage(
 
     try {
         if (model === 'gemini') {
-            return await sendToGemini(apiKey, history, newMessage, context, memoryContext, modelId, images);
+            return await sendToGemini(apiKey, history, newMessage, context, memoryContext, modelId, attachments);
         } else if (model === 'openai') {
-            return await sendToOpenAI(apiKey, history, newMessage, context, memoryContext, modelId, images);
+            return await sendToOpenAI(apiKey, history, newMessage, context, memoryContext, modelId, attachments);
         } else if (model === 'claude') {
-            return await sendToClaude(apiKey, history, newMessage, context, memoryContext, modelId, images);
+            return await sendToClaude(apiKey, history, newMessage, context, memoryContext, modelId, attachments);
         } else if (model === 'perplexity') {
-            return await sendToPerplexity(apiKey, history, newMessage, context, memoryContext, modelId);
+            return await sendToPerplexity(apiKey, history, newMessage, context, memoryContext, modelId, attachments);
         } else if (model === 'openrouter') {
-            return await sendToOpenRouter(apiKey, history, newMessage, context, memoryContext, modelId, images);
+            return await sendToOpenRouter(apiKey, history, newMessage, context, memoryContext, modelId, attachments);
         } else if (model === 'custom') {
-            return await sendToCustom(apiKey, customConfig?.baseUrl || '', customConfig?.modelName || '', history, newMessage, context, memoryContext);
+            return await sendToCustom(apiKey, customConfig?.baseUrl || '', customConfig?.modelName || '', history, newMessage, context, memoryContext, attachments);
         }
         throw new Error('Unsupported model');
     } catch (error: any) {
         console.error("AI Error:", error);
         return `Error: ${error.message || "Something went wrong."}`;
+    }
+}
+
+async function generateImage(apiKey: string, prompt: string, model: ModelType): Promise<string> {
+    // Currently only supporting OpenAI DALL-E 3 for image generation
+    if (model === 'openai' || model === 'openrouter') { // OpenRouter might support it too, but let's default to OpenAI direct for now or handle specific OpenRouter models if needed.
+        // For OpenRouter, we might need a specific model ID. For now, let's assume OpenAI key is used for DALL-E 3.
+        // If the user is using OpenRouter, they might not have a direct OpenAI key. 
+        // Let's try to use the provided key with OpenAI endpoint if model is 'openai'.
+
+        if (model === 'openai') {
+            return await generateImageOpenAI(apiKey, prompt);
+        }
+    }
+
+    return "Image generation is currently only supported for OpenAI (DALL-E 3). Please switch to OpenAI model to use this feature.";
+}
+
+async function generateImageOpenAI(apiKey: string, prompt: string): Promise<string> {
+    const openai = new OpenAI({
+        apiKey: apiKey,
+        baseURL: 'https://api.openai.com/v1',
+        dangerouslyAllowBrowser: true
+    });
+
+    try {
+        const response = await openai.images.generate({
+            model: "dall-e-3",
+            prompt: prompt,
+            n: 1,
+            size: "1024x1024",
+            response_format: "url" // or "b64_json"
+        });
+
+        if (!response.data || response.data.length === 0 || !response.data[0].url) {
+            throw new Error("No image URL returned from OpenAI.");
+        }
+
+        const imageUrl = response.data[0].url;
+        return `![Generated Image](${imageUrl})`;
+    } catch (error: any) {
+        console.error("Image Generation Error:", error);
+        return `Failed to generate image: ${error.message}`;
     }
 }
 
@@ -123,16 +188,13 @@ Response:
 
 `;
 
-async function sendToGemini(apiKey: string, history: ChatMessage[], newMessage: string, context?: BrowserContext, memoryContext: string = "", modelId: string = "gemini-2.0-flash", images?: string[]): Promise<string> {
+async function sendToGemini(apiKey: string, history: ChatMessage[], newMessage: string, context?: BrowserContext, memoryContext: string = "", modelId: string = "gemini-2.0-flash", attachments?: Attachment[]): Promise<string> {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${apiKey}`;
 
     // Prepare contents
     const contents: any[] = [];
 
     // 1. Add History
-    // Gemini expects: { role: "user" | "model", parts: [{ text: "..." }] }
-    // We need to merge consecutive messages of the same role if necessary, but simple mapping usually works if roles alternate.
-    // However, the system prompt is passed separately in 'systemInstruction'.
     for (const msg of history) {
         contents.push({
             role: msg.role === 'assistant' ? 'model' : 'user',
@@ -148,9 +210,19 @@ async function sendToGemini(apiKey: string, history: ChatMessage[], newMessage: 
             contextString += `\n\n[Open Tabs]\n${context.openTabs.map(t => `- ID: ${t.id}, Title: "${t.title}", URL: ${t.url}`).join('\n')}`;
         }
     }
-    const finalUserMessage = newMessage + contextString;
 
-    // Check if last message in history was 'user' to avoid consecutive user messages (shouldn't happen if history is correct, but just in case)
+    // Process text attachments
+    let attachmentText = "";
+    if (attachments && attachments.length > 0) {
+        const textAttachments = attachments.filter(a => a.type === 'text' || a.type === 'file');
+        if (textAttachments.length > 0) {
+            attachmentText = "\n\n[Attached Files]\n" + textAttachments.map(a => `--- File: ${a.name} ---\n${a.content}\n--- End File ---`).join('\n\n');
+        }
+    }
+
+    const finalUserMessage = newMessage + contextString + attachmentText;
+
+    // Check if last message in history was 'user' to avoid consecutive user messages
     if (contents.length > 0 && contents[contents.length - 1].role === 'user') {
         contents.push({
             role: 'user',
@@ -163,30 +235,32 @@ async function sendToGemini(apiKey: string, history: ChatMessage[], newMessage: 
         });
     }
 
-    // Handle User-uploaded Images
-    if (images && images.length > 0) {
-        const lastMsg = contents[contents.length - 1];
-        for (const img of images) {
-            try {
-                const base64Data = img.split(',')[1];
-                const mimeType = img.split(';')[0].split(':')[1] || 'image/jpeg';
-                if (base64Data) {
-                    lastMsg.parts.push({
-                        inline_data: {
-                            mime_type: mimeType,
-                            data: base64Data
-                        }
-                    });
+    // Handle Image Attachments
+    if (attachments && attachments.length > 0) {
+        const imageAttachments = attachments.filter(a => a.type === 'image');
+        if (imageAttachments.length > 0) {
+            const lastMsg = contents[contents.length - 1];
+            for (const img of imageAttachments) {
+                try {
+                    const base64Data = img.content.split(',')[1];
+                    const mimeType = img.content.split(';')[0].split(':')[1] || 'image/jpeg';
+                    if (base64Data) {
+                        lastMsg.parts.push({
+                            inline_data: {
+                                mime_type: mimeType,
+                                data: base64Data
+                            }
+                        });
+                    }
+                } catch (e) {
+                    console.error("Error processing uploaded image for Gemini:", e);
                 }
-            } catch (e) {
-                console.error("Error processing uploaded image for Gemini:", e);
             }
         }
     }
 
     // Handle Screenshot (Multimodal)
     if (context?.screenshot) {
-        // Attach to the last user message (which is the one we just added)
         const lastMsg = contents[contents.length - 1];
         try {
             const base64Data = context.screenshot.split(',')[1];
@@ -243,7 +317,7 @@ async function sendToGemini(apiKey: string, history: ChatMessage[], newMessage: 
     }
 }
 
-async function sendToOpenAI(apiKey: string, history: ChatMessage[], newMessage: string, context?: BrowserContext, memoryContext: string = "", modelId: string = "gpt-4o", images?: string[]): Promise<string> {
+async function sendToOpenAI(apiKey: string, history: ChatMessage[], newMessage: string, context?: BrowserContext, memoryContext: string = "", modelId: string = "gpt-4o", attachments?: Attachment[]): Promise<string> {
     const openai = new OpenAI({
         apiKey: apiKey,
         baseURL: 'https://api.openai.com/v1',
@@ -267,6 +341,14 @@ async function sendToOpenAI(apiKey: string, history: ChatMessage[], newMessage: 
             contextText += `\n\n[Open Tabs]\n${context.openTabs.map(t => `- ID: ${t.id}, Title: "${t.title}", URL: ${t.url}`).join('\n')}`;
         }
 
+        // Process text attachments
+        if (attachments && attachments.length > 0) {
+            const textAttachments = attachments.filter(a => a.type === 'text' || a.type === 'file');
+            if (textAttachments.length > 0) {
+                contextText += "\n\n[Attached Files]\n" + textAttachments.map(a => `--- File: ${a.name} ---\n${a.content}\n--- End File ---`).join('\n\n');
+            }
+        }
+
         currentContent.push({ type: "text", text: contextText });
 
         if (context.screenshot) {
@@ -277,15 +359,23 @@ async function sendToOpenAI(apiKey: string, history: ChatMessage[], newMessage: 
                 }
             });
         }
+    } else if (attachments && attachments.length > 0) {
+        // Handle text attachments even if no context
+        const textAttachments = attachments.filter(a => a.type === 'text' || a.type === 'file');
+        if (textAttachments.length > 0) {
+            const attachmentText = "\n\n[Attached Files]\n" + textAttachments.map(a => `--- File: ${a.name} ---\n${a.content}\n--- End File ---`).join('\n\n');
+            currentContent.push({ type: "text", text: attachmentText });
+        }
     }
 
     // Add user-uploaded images
-    if (images && images.length > 0) {
-        for (const img of images) {
+    if (attachments && attachments.length > 0) {
+        const imageAttachments = attachments.filter(a => a.type === 'image');
+        for (const img of imageAttachments) {
             currentContent.push({
                 type: "image_url",
                 image_url: {
-                    url: img
+                    url: img.content
                 }
             });
         }
@@ -305,7 +395,7 @@ async function sendToOpenAI(apiKey: string, history: ChatMessage[], newMessage: 
     return completion.choices[0].message.content || "{}";
 }
 
-async function sendToClaude(apiKey: string, history: ChatMessage[], newMessage: string, context?: BrowserContext, memoryContext: string = "", modelId: string = "claude-3-5-sonnet-20240620", images?: string[]): Promise<string> {
+async function sendToClaude(apiKey: string, history: ChatMessage[], newMessage: string, context?: BrowserContext, memoryContext: string = "", modelId: string = "claude-3-5-sonnet-20240620", attachments?: Attachment[]): Promise<string> {
     const alternatingHistory: { role: 'user' | 'assistant'; content: string }[] = [];
     const cleanHistory = history.filter(msg => msg.content && msg.content.trim() !== '');
 
@@ -342,6 +432,14 @@ async function sendToClaude(apiKey: string, history: ChatMessage[], newMessage: 
             contextText += `\n\n[Open Tabs]\n${context.openTabs.map(t => `- ID: ${t.id}, Title: "${t.title}", URL: ${t.url}`).join('\n')}`;
         }
 
+        // Process text attachments
+        if (attachments && attachments.length > 0) {
+            const textAttachments = attachments.filter(a => a.type === 'text' || a.type === 'file');
+            if (textAttachments.length > 0) {
+                contextText += "\n\n[Attached Files]\n" + textAttachments.map(a => `--- File: ${a.name} ---\n${a.content}\n--- End File ---`).join('\n\n');
+            }
+        }
+
         currentContent.push({ type: "text", text: contextText });
 
         if (context.screenshot) {
@@ -355,14 +453,22 @@ async function sendToClaude(apiKey: string, history: ChatMessage[], newMessage: 
                 }
             });
         }
+    } else if (attachments && attachments.length > 0) {
+        // Handle text attachments even if no context
+        const textAttachments = attachments.filter(a => a.type === 'text' || a.type === 'file');
+        if (textAttachments.length > 0) {
+            const attachmentText = "\n\n[Attached Files]\n" + textAttachments.map(a => `--- File: ${a.name} ---\n${a.content}\n--- End File ---`).join('\n\n');
+            currentContent.push({ type: "text", text: attachmentText });
+        }
     }
 
     // Add user-uploaded images
-    if (images && images.length > 0) {
-        for (const img of images) {
+    if (attachments && attachments.length > 0) {
+        const imageAttachments = attachments.filter(a => a.type === 'image');
+        for (const img of imageAttachments) {
             try {
-                const base64Data = img.split(',')[1];
-                const mimeType = img.split(';')[0].split(':')[1] || 'image/jpeg';
+                const base64Data = img.content.split(',')[1];
+                const mimeType = img.content.split(';')[0].split(':')[1] || 'image/jpeg';
                 currentContent.push({
                     type: "image",
                     source: {
@@ -418,7 +524,8 @@ async function sendToPerplexity(
     message: string,
     context?: BrowserContext,
     memoryContext: string = "",
-    modelId: string = 'sonar'
+    modelId: string = 'sonar',
+    attachments?: Attachment[]
 ): Promise<string> {
     // Filter out empty messages first
     const cleanHistory = history.filter(msg => msg.content && msg.content.trim() !== '');
@@ -462,6 +569,20 @@ async function sendToPerplexity(
         }
     }
 
+    // Process text attachments (Perplexity doesn't support images)
+    let attachmentText = "";
+    if (attachments && attachments.length > 0) {
+        const textAttachments = attachments.filter(a => a.type === 'text' || a.type === 'file');
+        if (textAttachments.length > 0) {
+            attachmentText = "\n\n[Attached Files]\n" + textAttachments.map(a => `--- File: ${a.name} ---\n${a.content}\n--- End File ---`).join('\n\n');
+        }
+        // Warn about image attachments
+        const imageAttachments = attachments.filter(a => a.type === 'image');
+        if (imageAttachments.length > 0) {
+            attachmentText += "\n\n[Note: Image attachments are not supported by Perplexity and have been omitted.]";
+        }
+    }
+
     let messages;
     // Check if the last message in history is from 'user'
     if (alternatingHistory.length > 0 && alternatingHistory[alternatingHistory.length - 1].role === 'user') {
@@ -470,13 +591,13 @@ async function sendToPerplexity(
         messages = [
             { role: 'system', content: SYSTEM_PROMPT + memoryContext },
             ...alternatingHistory,
-            { role: 'user', content: lastMsg.content + "\n\n" + message + contextText }
+            { role: 'user', content: lastMsg.content + "\n\n" + message + contextText + attachmentText }
         ];
     } else {
         messages = [
             { role: 'system', content: SYSTEM_PROMPT + memoryContext },
             ...alternatingHistory,
-            { role: 'user', content: message + contextText }
+            { role: 'user', content: message + contextText + attachmentText }
         ];
     }
 
@@ -514,7 +635,7 @@ async function sendToPerplexity(
     return content;
 }
 
-async function sendToCustom(apiKey: string, baseUrl: string, modelName: string, history: ChatMessage[], newMessage: string, context?: BrowserContext, memoryContext: string = ""): Promise<string> {
+async function sendToCustom(apiKey: string, baseUrl: string, modelName: string, history: ChatMessage[], newMessage: string, context?: BrowserContext, memoryContext: string = "", attachments?: Attachment[]): Promise<string> {
     const openai = new OpenAI({
         apiKey: apiKey,
         baseURL: baseUrl,
@@ -538,6 +659,14 @@ async function sendToCustom(apiKey: string, baseUrl: string, modelName: string, 
             contextText += `\n\n[Open Tabs]\n${context.openTabs.map(t => `- ID: ${t.id}, Title: "${t.title}", URL: ${t.url}`).join('\n')}`;
         }
 
+        // Process text attachments
+        if (attachments && attachments.length > 0) {
+            const textAttachments = attachments.filter(a => a.type === 'text' || a.type === 'file');
+            if (textAttachments.length > 0) {
+                contextText += "\n\n[Attached Files]\n" + textAttachments.map(a => `--- File: ${a.name} ---\n${a.content}\n--- End File ---`).join('\n\n');
+            }
+        }
+
         currentContent.push({ type: "text", text: contextText });
 
         if (context.screenshot) {
@@ -545,6 +674,26 @@ async function sendToCustom(apiKey: string, baseUrl: string, modelName: string, 
                 type: "image_url",
                 image_url: {
                     url: context.screenshot
+                }
+            });
+        }
+    } else if (attachments && attachments.length > 0) {
+        // Handle text attachments even if no context
+        const textAttachments = attachments.filter(a => a.type === 'text' || a.type === 'file');
+        if (textAttachments.length > 0) {
+            const attachmentText = "\n\n[Attached Files]\n" + textAttachments.map(a => `--- File: ${a.name} ---\n${a.content}\n--- End File ---`).join('\n\n');
+            currentContent.push({ type: "text", text: attachmentText });
+        }
+    }
+
+    // Add user-uploaded images
+    if (attachments && attachments.length > 0) {
+        const imageAttachments = attachments.filter(a => a.type === 'image');
+        for (const img of imageAttachments) {
+            currentContent.push({
+                type: "image_url",
+                image_url: {
+                    url: img.content
                 }
             });
         }
@@ -566,7 +715,7 @@ async function sendToCustom(apiKey: string, baseUrl: string, modelName: string, 
 
 
 // OpenRouter API (Unified access to many models)
-async function sendToOpenRouter(apiKey: string, history: ChatMessage[], newMessage: string, context?: BrowserContext, memoryContext: string = "", modelId: string = "openai/gpt-4o", images?: string[]): Promise<string> {
+async function sendToOpenRouter(apiKey: string, history: ChatMessage[], newMessage: string, context?: BrowserContext, memoryContext: string = "", modelId: string = "openai/gpt-4o", attachments?: Attachment[]): Promise<string> {
     let contextString = "";
     if (context) {
         contextString = `
@@ -583,17 +732,29 @@ ${context.openTabs.map(t => `- ID: ${t.id}, Title: "${t.title}", URL: ${t.url}`)
         }
     }
 
-    // Build user message content (text + images if any)
-    let userContent: any = newMessage + contextString;
+    // Process text attachments
+    let attachmentText = "";
+    if (attachments && attachments.length > 0) {
+        const textAttachments = attachments.filter(a => a.type === 'text' || a.type === 'file');
+        if (textAttachments.length > 0) {
+            attachmentText = "\n\n[Attached Files]\n" + textAttachments.map(a => `--- File: ${a.name} ---\n${a.content}\n--- End File ---`).join('\n\n');
+        }
+    }
 
-    if (images && images.length > 0) {
-        userContent = [
-            { type: "text", text: newMessage + contextString },
-            ...images.map(img => ({
-                type: "image_url",
-                image_url: { url: img }
-            }))
-        ];
+    // Build user message content (text + images if any)
+    let userContent: any = newMessage + contextString + attachmentText;
+
+    if (attachments && attachments.length > 0) {
+        const imageAttachments = attachments.filter(a => a.type === 'image');
+        if (imageAttachments.length > 0) {
+            userContent = [
+                { type: "text", text: newMessage + contextString + attachmentText },
+                ...imageAttachments.map(img => ({
+                    type: "image_url",
+                    image_url: { url: img.content }
+                }))
+            ];
+        }
     }
 
     const messages = [
@@ -629,4 +790,3 @@ ${context.openTabs.map(t => `- ID: ${t.id}, Title: "${t.title}", URL: ${t.url}`)
 
     return data.choices?.[0]?.message?.content || "{}";
 }
-
