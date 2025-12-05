@@ -106,6 +106,7 @@ Your goal is to understand the user's intent and fulfill it efficiently using th
 - \`{ "action": "type", "selector": "...", "text": "..." }\` - Type in input
 - \`{ "action": "press_key", "key": "enter|tab|escape" }\` - Press keyboard key
 - \`{ "action": "type_and_submit", "selector": "...", "text": "..." }\` - Type and press Enter
+- \`{ "action": "set_reminder", "seconds": N, "message": "..." }\` - Set a timer
 - \`{ "action": "scroll", "direction": "up|down|top|bottom" }\`
 - \`{ "action": "new_tab", "url": "..." }\`
 - \`{ "action": "switch_tab", "tabId": N }\`
@@ -113,16 +114,10 @@ Your goal is to understand the user's intent and fulfill it efficiently using th
 
 **Examples:**
 
-User: "Search for cats on this website"
-Your analysis: Looking at Interactive Elements, I see:
-- [input type="text"] Selector: #search-input | Label: "Search products"
-- [button] Selector: button.search-btn | Label: "Go"
-
+User: "Remind me to take a break in 2 minutes"
 Response:
-{ "thought": "I'll type in the search input, then click the Go button.", "action": { "action": "type", "selector": "#search-input", "text": "cats" } }
+{ "thought": "Setting a reminder for 2 minutes (120 seconds).", "action": { "action": "set_reminder", "seconds": 120, "message": "Take a break" } }
 
-Next turn (after typing succeeds):
-{ "thought": "Now clicking the search button.", "action": { "action": "click", "selector": "button.search-btn" } }
 `;
 
 async function sendToGemini(apiKey: string, history: ChatMessage[], newMessage: string, context?: BrowserContext, memoryContext: string = "", modelId: string = "gemini-2.0-flash"): Promise<string> {

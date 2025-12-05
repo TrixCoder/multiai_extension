@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Send, Image as ImageIcon, Settings, Bot, User, Loader2, PlusCircle, Trash2, Plus, MessageSquare, X, Edit2, Check, Menu, Copy } from 'lucide-react';
+import { Send, Settings, Bot, User, Loader2, PlusCircle, Trash2, Plus, MessageSquare, X, Edit2, Check, Menu, Copy, Bell, Clock, CheckCircle, Image as ImageIcon } from 'lucide-react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { sendMessage } from './lib/ai';
@@ -33,6 +33,14 @@ type ChatSession = {
 
 type Model = 'gemini' | 'openai' | 'perplexity' | 'claude' | 'custom';
 
+type Reminder = {
+  id: string;
+  message: string;
+  triggerAt: number; // timestamp
+  createdAt: number;
+  status: 'pending' | 'completed' | 'dismissed';
+};
+
 const BATCH_SIZE = 20;
 
 function MainApp() {
@@ -62,6 +70,9 @@ function MainApp() {
 
   const [showSettings, setShowSettings] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [showReminders, setShowReminders] = useState(false);
+  const [reminders, setReminders] = useState<Reminder[]>([]);
+  const [reminderFilter, setReminderFilter] = useState<'all' | 'pending' | 'completed'>('all');
   const [hasConsented, setHasConsented] = useState<boolean | null>(null);
 
   // Session Management
@@ -399,9 +410,60 @@ function MainApp() {
       return "❌ Error: No tabId provided.";
     }
 
-    // --- ASK SELECTION ---
-    if (action.action === 'ask_selection') {
-      return action.question;
+    // --- REMINDER ---
+    if (action.action === 'set_reminder') {
+      const seconds = action.seconds || 0;
+      const msg = action.message || "Reminder!";
+
+      if (seconds > 0) {
+        const reminderId = Date.now().toString();
+        const triggerAt = Date.now() + (seconds * 1000);
+
+        // Add to reminders state
+        const newReminder: Reminder = {
+          id: reminderId,
+          message: msg,
+          triggerAt: triggerAt,
+          createdAt: Date.now(),
+          status: 'pending'
+        };
+
+        setReminders(prev => [...prev, newReminder]);
+
+        setTimeout(() => {
+          // Update reminder status to completed
+          setReminders(prev => prev.map(r =>
+            r.id === reminderId ? { ...r, status: 'completed' as const } : r
+          ));
+
+          // Play notification sound (beep)
+          const beep = new Audio('data:audio/wav;base64,UklGRnoAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YUsAAACAgICAgICAgICAgIB/f39/f39/f39/f4CAgICAgICBgYGBgYGBgYGBgYGAgICAgICAgICAgIB/f39+fn5+fn5+f39/f4CAgA==');
+          beep.play().catch(() => { });
+
+          // Browser Notification
+          try {
+            chrome.notifications.create(reminderId, {
+              type: 'basic',
+              iconUrl: 'icons/icon128.png',
+              title: '⏰ Reminder',
+              message: msg,
+              priority: 2,
+              requireInteraction: true
+            });
+          } catch (e) {
+            console.log("Notification failed:", e);
+          }
+
+          // Alert as fallback
+          alert(`⏰ Reminder: ${msg}`);
+        }, seconds * 1000);
+
+        const mins = Math.floor(seconds / 60);
+        const secs = seconds % 60;
+        const timeStr = mins > 0 ? `${mins} minute(s) ${secs > 0 ? `and ${secs} second(s)` : ''}` : `${secs} second(s)`;
+        return `✅ **Reminder Set** for ${timeStr}: "${msg}"`;
+      }
+      return "❌ Error: Invalid time for reminder.";
     }
 
     // --- DOM ACTIONS (scroll, click, type, press_key) ---
@@ -802,6 +864,13 @@ You CAN navigate to other URLs using the 'navigate' action.`;
           // Add result to history
           currentHistory.push({ role: 'user', content: `Action Result: ${actionResult}` });
 
+          // If the AI also provided a response along with the action, use it and stop
+          // This handles cases like "I've set the reminder for you" + action
+          if (responseContent && responseContent !== thought && !responseContent.includes('"action"')) {
+            finalResponse = responseContent;
+            break;
+          }
+
           loopCount++;
           // Continue loop
         } else {
@@ -948,11 +1017,158 @@ You CAN navigate to other URLs using the 'navigate' action.`;
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
+            <button onClick={() => setShowReminders(!showReminders)} className="p-2 hover:bg-gray-200 dark:hover:bg-gray-800 rounded-lg transition-colors relative">
+              <Bell className="w-5 h-5" />
+              {reminders.filter(r => r.status === 'pending').length > 0 && (
+                <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+              )}
+            </button>
             <button onClick={() => setShowSettings(true)} className="p-2 hover:bg-gray-200 dark:hover:bg-gray-800 rounded-lg transition-colors">
               <Settings className="w-5 h-5" />
             </button>
           </div>
         </header>
+
+        {/* Reminders Panel */}
+        {showReminders && (
+          <div className="absolute top-14 right-3 z-50 w-96 bg-white dark:bg-gray-800 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+            <div className="p-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+              <h3 className="font-semibold text-sm flex items-center gap-2">
+                <Bell className="w-4 h-4" /> Reminders
+                <span className="text-xs bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-400 px-1.5 py-0.5 rounded-full">
+                  {reminders.filter(r => r.status === 'pending').length} pending
+                </span>
+              </h3>
+              <button onClick={() => setShowReminders(false)} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Filter Tabs */}
+            <div className="flex border-b border-gray-200 dark:border-gray-700">
+              {(['all', 'pending', 'completed'] as const).map(filter => (
+                <button
+                  key={filter}
+                  onClick={() => setReminderFilter(filter)}
+                  className={cn(
+                    "flex-1 py-2 text-xs font-medium capitalize transition-colors",
+                    reminderFilter === filter
+                      ? "text-blue-600 border-b-2 border-blue-600 bg-blue-50 dark:bg-blue-900/20"
+                      : "text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-700/50"
+                  )}
+                >
+                  {filter} ({filter === 'all'
+                    ? reminders.length
+                    : reminders.filter(r => r.status === filter).length})
+                </button>
+              ))}
+            </div>
+
+            <div className="max-h-72 overflow-y-auto">
+              {reminders.length === 0 ? (
+                <div className="p-6 text-center text-gray-500">
+                  <Clock className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                  <p className="text-sm">No reminders yet</p>
+                  <p className="text-xs mt-1">Ask me: "Remind me to..."</p>
+                </div>
+              ) : (
+                <div className="divide-y divide-gray-100 dark:divide-gray-700">
+                  {reminders
+                    .filter(r => reminderFilter === 'all' || r.status === reminderFilter)
+                    .sort((a, b) => a.triggerAt - b.triggerAt)
+                    .map(reminder => (
+                      <div key={reminder.id} className={cn(
+                        "p-3 flex items-start gap-3 transition-colors",
+                        reminder.status === 'completed' ? "bg-green-50/50 dark:bg-green-900/10" : "hover:bg-gray-50 dark:hover:bg-gray-700/30"
+                      )}>
+                        {reminder.status === 'completed' ? (
+                          <CheckCircle className="w-5 h-5 text-green-500 shrink-0 mt-0.5" />
+                        ) : (
+                          <div className="relative">
+                            <Clock className="w-5 h-5 text-blue-500 shrink-0 mt-0.5" />
+                            <span className="absolute -top-1 -right-1 w-2 h-2 bg-blue-500 rounded-full animate-ping" />
+                          </div>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium">{reminder.message}</p>
+                          <div className="flex items-center gap-2 mt-1">
+                            {reminder.status === 'pending' ? (
+                              <span className="text-xs text-blue-600 dark:text-blue-400 font-medium">
+                                ⏳ In {Math.max(0, Math.ceil((reminder.triggerAt - Date.now()) / 1000))}s
+                              </span>
+                            ) : (
+                              <span className="text-xs text-green-600 dark:text-green-400">
+                                ✅ {new Date(reminder.triggerAt).toLocaleTimeString()}
+                              </span>
+                            )}
+                            <span className="text-xs text-gray-400">
+                              Set at {new Date(reminder.createdAt).toLocaleTimeString()}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          {reminder.status === 'completed' && (
+                            <button
+                              onClick={() => {
+                                // Snooze for 5 more minutes
+                                const snoozeTime = 5 * 60;
+                                setReminders(prev => prev.map(r =>
+                                  r.id === reminder.id
+                                    ? { ...r, status: 'pending' as const, triggerAt: Date.now() + (snoozeTime * 1000) }
+                                    : r
+                                ));
+                                setTimeout(() => {
+                                  setReminders(prev => prev.map(r =>
+                                    r.id === reminder.id ? { ...r, status: 'completed' as const } : r
+                                  ));
+                                  const beep = new Audio('data:audio/wav;base64,UklGRnoAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YUsAAACAgICAgICAgICAgIB/f39/f39/f39/f4CAgICAgICBgYGBgYGBgYGBgYGAgICAgICAgICAgIB/f39+fn5+fn5+f39/f4CAgA==');
+                                  beep.play().catch(() => { });
+                                  alert(`⏰ Reminder: ${reminder.message}`);
+                                }, snoozeTime * 1000);
+                              }}
+                              className="p-1.5 hover:bg-blue-100 dark:hover:bg-blue-900/30 text-blue-500 rounded text-xs"
+                              title="Snooze 5 min"
+                            >
+                              🔄
+                            </button>
+                          )}
+                          <button
+                            onClick={() => setReminders(prev => prev.filter(r => r.id !== reminder.id))}
+                            className="p-1.5 hover:bg-red-100 dark:hover:bg-red-900/30 text-red-500 rounded"
+                            title="Delete"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  {reminders.filter(r => reminderFilter === 'all' || r.status === reminderFilter).length === 0 && (
+                    <div className="p-4 text-center text-gray-500 text-sm">
+                      No {reminderFilter} reminders
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {reminders.length > 0 && (
+              <div className="p-2 border-t border-gray-200 dark:border-gray-700 flex gap-2">
+                <button
+                  onClick={() => setReminders(prev => prev.filter(r => r.status !== 'completed'))}
+                  className="flex-1 text-xs text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 p-2 rounded"
+                >
+                  Clear Completed
+                </button>
+                <button
+                  onClick={() => setReminders([])}
+                  className="flex-1 text-xs text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 p-2 rounded"
+                >
+                  Clear All
+                </button>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Settings Panel */}
         {showSettings && (
