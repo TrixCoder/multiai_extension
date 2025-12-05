@@ -65,6 +65,8 @@ function MainApp() {
   const [customBaseUrl, setCustomBaseUrl] = useState('');
   const [customApiKey, setCustomApiKey] = useState('');
   const [customModelName, setCustomModelName] = useState('');
+  const [customTemperature, setCustomTemperature] = useState(0.7);
+  const [customSystemPrompt, setCustomSystemPrompt] = useState('You are a helpful AI assistant.');
   const [memory, setMemory] = useState<MemoryItem[]>([]);
 
   const [showSettings, setShowSettings] = useState(false);
@@ -205,7 +207,7 @@ function MainApp() {
       }
     });
 
-    chrome.storage.sync.get(['geminiApiKey', 'openaiApiKey', 'claudeApiKey', 'perplexityApiKey', 'openrouterApiKey', 'customBaseUrl', 'customApiKey', 'customModelName', 'selectedModel', 'selectedModelId'], (result) => {
+    chrome.storage.sync.get(['geminiApiKey', 'openaiApiKey', 'claudeApiKey', 'perplexityApiKey', 'openrouterApiKey', 'customBaseUrl', 'customApiKey', 'customModelName', 'customTemperature', 'customSystemPrompt', 'selectedModel', 'selectedModelId'], (result) => {
       const data = result as any;
       if (data.geminiApiKey) setGeminiApiKey(data.geminiApiKey);
       if (data.openaiApiKey) setOpenaiApiKey(data.openaiApiKey);
@@ -215,6 +217,8 @@ function MainApp() {
       if (data.customBaseUrl) setCustomBaseUrl(data.customBaseUrl);
       if (data.customApiKey) setCustomApiKey(data.customApiKey);
       if (data.customModelName) setCustomModelName(data.customModelName);
+      if (data.customTemperature !== undefined) setCustomTemperature(data.customTemperature);
+      if (data.customSystemPrompt) setCustomSystemPrompt(data.customSystemPrompt);
       if (data.selectedModel) setSelectedModel(data.selectedModel);
       if (data.selectedModelId) setSelectedModelId(data.selectedModelId);
     });
@@ -231,10 +235,12 @@ function MainApp() {
       customBaseUrl,
       customApiKey,
       customModelName,
+      customTemperature,
+      customSystemPrompt,
       selectedModel,
       selectedModelId,
     });
-  }, [geminiApiKey, openaiApiKey, claudeApiKey, perplexityApiKey, openrouterApiKey, customBaseUrl, customApiKey, customModelName, selectedModel, selectedModelId]);
+  }, [geminiApiKey, openaiApiKey, claudeApiKey, perplexityApiKey, openrouterApiKey, customBaseUrl, customApiKey, customModelName, customTemperature, customSystemPrompt, selectedModel, selectedModelId]);
 
   // Persist Sessions
   useEffect(() => {
@@ -875,7 +881,7 @@ You CAN navigate to other URLs using the 'navigate' action.`;
               currentHistory,
               loopCount === 0 ? text : "Proceed with the next step based on the previous action result.",
               context,
-              { baseUrl: customBaseUrl, modelName: customModelName },
+              { baseUrl: customBaseUrl, modelName: customModelName, temperature: customTemperature, systemPrompt: customSystemPrompt },
               memory,
               selectedModelId,
               loopCount === 0 ? attachments : [] // Only send attachments on first message
@@ -1286,14 +1292,40 @@ You CAN navigate to other URLs using the 'navigate' action.`;
                 {/* Custom Provider Section */}
                 <div className="space-y-4 pt-4 border-t border-gray-700/50">
                   <h3 className="font-semibold text-white">Custom Provider</h3>
+                  <p className="text-xs text-gray-500">Use any OpenAI-compatible API (like Bytez, Together AI, etc.)</p>
                   <div className="space-y-3">
                     <div className="flex items-center gap-3">
                       <span className="text-sm text-gray-300 w-36 shrink-0">Base URL</span>
-                      <input type="text" value={customBaseUrl} onChange={(e) => setCustomBaseUrl(e.target.value)} className="flex-1 p-2.5 rounded-xl bg-gray-800 border border-gray-700 text-white placeholder-gray-500 focus:border-blue-500 outline-none" placeholder="https://api.example.com/v1" />
+                      <input type="text" value={customBaseUrl} onChange={(e) => setCustomBaseUrl(e.target.value)} className="flex-1 p-2.5 rounded-xl bg-gray-800 border border-gray-700 text-white placeholder-gray-500 focus:border-blue-500 outline-none" placeholder="https://api.bytez.com/models/v2" />
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm text-gray-300 w-36 shrink-0">API Key</span>
+                      <input type="password" value={customApiKey} onChange={(e) => setCustomApiKey(e.target.value)} className="flex-1 p-2.5 rounded-xl bg-gray-800 border border-gray-700 text-white placeholder-gray-500 focus:border-blue-500 outline-none" placeholder="sk-..." />
                     </div>
                     <div className="flex items-center gap-3">
                       <span className="text-sm text-gray-300 w-36 shrink-0">Model Name</span>
-                      <input type="text" value={customModelName} onChange={(e) => setCustomModelName(e.target.value)} className="flex-1 p-2.5 rounded-xl bg-gray-800 border border-gray-700 text-white placeholder-gray-500 focus:border-blue-500 outline-none" placeholder="custom-model-001" />
+                      <input type="text" value={customModelName} onChange={(e) => setCustomModelName(e.target.value)} className="flex-1 p-2.5 rounded-xl bg-gray-800 border border-gray-700 text-white placeholder-gray-500 focus:border-blue-500 outline-none" placeholder="Qwen/Qwen3-4B" />
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm text-gray-300 w-36 shrink-0">Temperature ({customTemperature})</span>
+                      <input
+                        type="range"
+                        min="0"
+                        max="2"
+                        step="0.1"
+                        value={customTemperature}
+                        onChange={(e) => setCustomTemperature(parseFloat(e.target.value))}
+                        className="flex-1 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <span className="text-sm text-gray-300">System Prompt</span>
+                      <textarea
+                        value={customSystemPrompt}
+                        onChange={(e) => setCustomSystemPrompt(e.target.value)}
+                        className="w-full p-2.5 rounded-xl bg-gray-800 border border-gray-700 text-white placeholder-gray-500 focus:border-blue-500 outline-none resize-none h-24"
+                        placeholder="You are a helpful AI assistant..."
+                      />
                     </div>
                   </div>
                 </div>

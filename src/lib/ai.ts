@@ -33,7 +33,7 @@ export async function sendMessage(
     history: ChatMessage[],
     newMessage: string,
     context?: BrowserContext,
-    customConfig?: { baseUrl: string; modelName: string },
+    customConfig?: { baseUrl: string; modelName: string; temperature?: number; systemPrompt?: string },
     memory?: MemoryItem[],
     modelId?: string,
     attachments?: Attachment[]
@@ -75,7 +75,7 @@ export async function sendMessage(
         } else if (model === 'openrouter') {
             return await sendToOpenRouter(apiKey, history, newMessage, context, memoryContext, modelId, attachments);
         } else if (model === 'custom') {
-            return await sendToCustom(apiKey, customConfig?.baseUrl || '', customConfig?.modelName || '', history, newMessage, context, memoryContext, attachments);
+            return await sendToCustom(apiKey, customConfig?.baseUrl || '', customConfig?.modelName || '', history, newMessage, context, memoryContext, attachments, customConfig?.temperature, customConfig?.systemPrompt);
         }
         throw new Error('Unsupported model');
     } catch (error: any) {
@@ -635,81 +635,103 @@ async function sendToPerplexity(
     return content;
 }
 
-async function sendToCustom(apiKey: string, baseUrl: string, modelName: string, history: ChatMessage[], newMessage: string, context?: BrowserContext, memoryContext: string = "", attachments?: Attachment[]): Promise<string> {
-    const openai = new OpenAI({
-        apiKey: apiKey,
-        baseURL: baseUrl,
-        dangerouslyAllowBrowser: true
-    });
-
+async function sendToCustom(
+    apiKey: string,
+    baseUrl: string,
+    modelName: string,
+    history: ChatMessage[],
+    newMessage: string,
+    context?: BrowserContext,
+    memoryContext: string = "",
+    attachments?: Attachment[],
+    temperature: number = 0.7,
+    systemPrompt: string = "You are a helpful AI assistant."
+): Promise<string> {
+    // Build messages array
     const messages: any[] = [
-        { role: "system", content: SYSTEM_PROMPT + memoryContext },
+        { role: "system", content: systemPrompt + memoryContext },
         ...history.map(msg => ({
             role: msg.role,
             content: msg.content
         }))
     ];
 
-    let currentContent: any[] = [{ type: "text", text: newMessage }];
+    // Build user message content
+    let userContent = newMessage;
 
     if (context) {
-        let contextText = `\n\n[Current Page Context]\nTitle: ${context.title}\nURL: ${context.url}\nContent: ${context.content.substring(0, 10000)}...`;
+        userContent += `\n\n[Current Page Context]\nTitle: ${context.title}\nURL: ${context.url}\nContent: ${context.content.substring(0, 10000)}...`;
 
         if (context.openTabs && context.openTabs.length > 0) {
-            contextText += `\n\n[Open Tabs]\n${context.openTabs.map(t => `- ID: ${t.id}, Title: "${t.title}", URL: ${t.url}`).join('\n')}`;
-        }
-
-        // Process text attachments
-        if (attachments && attachments.length > 0) {
-            const textAttachments = attachments.filter(a => a.type === 'text' || a.type === 'file');
-            if (textAttachments.length > 0) {
-                contextText += "\n\n[Attached Files]\n" + textAttachments.map(a => `--- File: ${a.name} ---\n${a.content}\n--- End File ---`).join('\n\n');
-            }
-        }
-
-        currentContent.push({ type: "text", text: contextText });
-
-        if (context.screenshot) {
-            currentContent.push({
-                type: "image_url",
-                image_url: {
-                    url: context.screenshot
-                }
-            });
-        }
-    } else if (attachments && attachments.length > 0) {
-        // Handle text attachments even if no context
-        const textAttachments = attachments.filter(a => a.type === 'text' || a.type === 'file');
-        if (textAttachments.length > 0) {
-            const attachmentText = "\n\n[Attached Files]\n" + textAttachments.map(a => `--- File: ${a.name} ---\n${a.content}\n--- End File ---`).join('\n\n');
-            currentContent.push({ type: "text", text: attachmentText });
+            userContent += `\n\n[Open Tabs]\n${context.openTabs.map(t => `- ID: ${t.id}, Title: "${t.title}", URL: ${t.url}`).join('\n')}`;
         }
     }
 
-    // Add user-uploaded images
+    // Process text attachments
     if (attachments && attachments.length > 0) {
-        const imageAttachments = attachments.filter(a => a.type === 'image');
-        for (const img of imageAttachments) {
-            currentContent.push({
-                type: "image_url",
-                image_url: {
-                    url: img.content
-                }
-            });
+        const textAttachments = attachments.filter(a => a.type === 'text' || a.type === 'file');
+        if (textAttachments.length > 0) {
+            userContent += "\n\n[Attached Files]\n" + textAttachments.map(a => `--- File: ${a.name} ---\n${a.content}\n--- End File ---`).join('\n\n');
         }
     }
 
     messages.push({
         role: "user",
-        content: currentContent
+        content: userContent
     });
 
-    const completion = await openai.chat.completions.create({
-        messages: messages,
-        model: modelName || "gpt-3.5-turbo",
+    // Construct the API URL - append model name if the URL doesn't already contain it
+    let apiUrl = baseUrl;
+    if (modelName && !baseUrl.includes(modelName)) {
+        // For Bytez-style APIs: base_url/model_name
+        apiUrl = baseUrl.endsWith('/') ? `${baseUrl}${modelName}` : `${baseUrl}/${modelName}`;
+    }
+
+    // Make the API request using fetch for maximum compatibility
+    const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            messages: messages,
+            model: modelName || undefined,
+            stream: false,
+            params: {
+                temperature: temperature,
+                max_length: 4096
+            },
+            // Also include top-level params for OpenAI-compatible APIs
+            temperature: temperature,
+            max_tokens: 4096
+        })
     });
 
-    return completion.choices[0].message.content || "{}";
+    if (!response.ok) {
+        const errorData = await response.text();
+        console.error("Custom API Error:", response.status, errorData);
+        throw new Error(`Custom API error: ${response.status} - ${errorData}`);
+    }
+
+    const data = await response.json();
+    console.log("Custom API Response:", data);
+
+    // Handle different response formats
+    if (data.choices && data.choices[0]?.message?.content) {
+        // OpenAI-style response
+        return data.choices[0].message.content;
+    } else if (data.response) {
+        // Some custom APIs return { response: "..." }
+        return data.response;
+    } else if (data.content) {
+        // Some APIs return { content: "..." }
+        return data.content;
+    } else if (typeof data === 'string') {
+        return data;
+    }
+
+    return JSON.stringify(data);
 }
 
 
