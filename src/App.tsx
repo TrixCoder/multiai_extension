@@ -7,6 +7,8 @@ import type { BrowserContext, MemoryItem } from './lib/ai';
 import { TermsModal } from './components/TermsModal';
 import { ThemeProvider, useTheme } from './components/ThemeProvider';
 import { MarkdownMessage } from './components/MarkdownMessage';
+import { AdBanner } from './components/AdBanner';
+import { SettingsAd } from './components/SettingsAd';
 
 // Utility for conditional tailwind classes
 function cn(...inputs: (string | undefined | null | false)[]) {
@@ -599,6 +601,13 @@ function MainApp() {
             </div>
           ))}
         </div>
+
+        {/* Ad Banner in Sidebar */}
+        <AdBanner
+          href="https://github.com/sponsors/yourusername"
+          title="Sponsored"
+          description="Support development & get Pro features!"
+        />
       </div>
 
       {/* Main Content */}
@@ -625,6 +634,14 @@ function MainApp() {
                 <h2 className="text-xl font-bold">Settings</h2>
                 <button onClick={() => setShowSettings(false)} className="p-2 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-full"><X className="w-5 h-5" /></button>
               </div>
+
+              {/* Sponsored Link in Settings */}
+              <SettingsAd
+                href="https://github.com/sponsors/yourusername"
+                title="Support the Developer"
+                description="Help us keep this extension free and open source!"
+                cta="Sponsor"
+              />
 
               <div className="space-y-6">
                 <div className="space-y-4">
@@ -798,11 +815,20 @@ function MainApp() {
         <div className="p-4 bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-800">
           <div className="relative flex items-end gap-2 bg-gray-100 dark:bg-gray-800 p-2 rounded-2xl border border-gray-200 dark:border-gray-700 focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500 transition-all shadow-inner">
             <button className="p-2 text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-gray-700 rounded-xl transition-colors"><ImageIcon className="w-5 h-5" /></button>
-            <textarea value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }} placeholder="Ask anything or give a command..." className="flex-1 bg-transparent border-none focus:ring-0 text-sm max-h-32 resize-none py-2 text-gray-900 dark:text-gray-100 placeholder-gray-500 scrollbar-hide" rows={1} style={{ minHeight: '40px' }} />
-            <button onClick={handleSend} disabled={!input.trim() || isLoading} className="p-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:hover:bg-blue-600 text-white rounded-xl transition-colors shadow-lg shadow-blue-600/20"><Send className="w-4 h-4" /></button>
-          </div>
-          <div className="text-center mt-2">
-            <p className="text-xs text-gray-500 dark:text-gray-600">Powered by {selectedModel.charAt(0).toUpperCase() + selectedModel.slice(1)}</p>
+            <textarea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSend();
+                }
+              }}
+              placeholder="Ask anything or paste a URL..."
+              className="flex-1 bg-transparent border-none focus:ring-0 resize-none max-h-32 py-2 text-sm"
+              rows={1}
+            />
+            <button onClick={handleSend} disabled={isLoading || !input.trim()} className="p-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg shadow-blue-600/20"><Send className="w-5 h-5" /></button>
           </div>
         </div>
       </div>
