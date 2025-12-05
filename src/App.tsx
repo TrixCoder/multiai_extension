@@ -604,7 +604,7 @@ function MainApp() {
 
         {/* Ad Banner in Sidebar */}
         <AdBanner
-          href="https://github.com/sponsors/yourusername"
+          href="https://github.com/sponsors/TrixCoder"
           title="Sponsored"
           description="Support development & get Pro features!"
         />
@@ -637,7 +637,7 @@ function MainApp() {
 
               {/* Sponsored Link in Settings */}
               <SettingsAd
-                href="https://github.com/sponsors/yourusername"
+                href="https://github.com/sponsors/TrixCoder"
                 title="Support the Developer"
                 description="Help us keep this extension free and open source!"
                 cta="Sponsor"

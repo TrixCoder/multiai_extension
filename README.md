@@ -15,7 +15,7 @@ An advanced autonomous browser agent extension built with React, TypeScript, and
 
 1.  Clone the repository:
     ```bash
-    git clone https://github.com/yourusername/multimodal-browser.git
+    git clone https://github.com/TrixCoder/multimodal-browser.git
     cd multimodal-browser
     ```
 
