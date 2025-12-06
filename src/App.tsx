@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Send, Settings, Bot, User, Loader2, PlusCircle, Trash2, Plus, MessageSquare, X, Edit2, Check, Menu, Copy, Bell, Clock, CheckCircle, Paperclip, FileText } from 'lucide-react';
+import { Send, Settings, Bot, User, Loader2, PlusCircle, Trash2, Plus, MessageSquare, X, Edit2, Check, Menu, Copy, Bell, Clock, CheckCircle, Paperclip, FileText, Square } from 'lucide-react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { sendMessage } from './lib/ai';
@@ -84,6 +84,7 @@ function MainApp() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -377,6 +378,52 @@ function MainApp() {
     const updatedMemory = memory.filter((_, i) => i !== index);
     setMemory(updatedMemory);
     chrome.storage.local.set({ memory: updatedMemory });
+  };
+
+  // Stop AI generation
+  const stopGeneration = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setIsLoading(false);
+    setCurrentThought('');
+  };
+
+  // Delete a message (and optionally all messages after it)
+  const deleteMessage = (messageId: string, deleteAfter: boolean = false) => {
+    const messageIndex = messages.findIndex(m => m.id === messageId);
+    if (messageIndex === -1) return;
+
+    let updatedMessages: Message[];
+    if (deleteAfter) {
+      // Delete this message and all after it
+      updatedMessages = messages.slice(0, messageIndex);
+    } else {
+      // Delete just this message
+      updatedMessages = messages.filter(m => m.id !== messageId);
+    }
+
+    setMessages(updatedMessages);
+    // Persist to storage
+    chrome.storage.local.set({ currentMessages: updatedMessages });
+  };
+
+  // Edit a user message - put content back in input and delete from that point
+  const editMessage = (messageId: string) => {
+    const message = messages.find(m => m.id === messageId);
+    if (!message || message.role !== 'user') return;
+
+    // Put message content into input
+    setInput(message.content);
+
+    // Restore attachments if any
+    if (message.attachments) {
+      setAttachments(message.attachments);
+    }
+
+    // Delete this message and all after it
+    deleteMessage(messageId, true);
   };
 
   const executeAction = async (action: any) => {
@@ -1492,6 +1539,26 @@ You CAN navigate to other URLs using the 'navigate' action.`;
                   >
                     <Copy className="w-3 h-3" />
                   </button>
+
+                  {/* Delete Button */}
+                  <button
+                    onClick={() => deleteMessage(msg.id)}
+                    className="absolute top-2 right-8 p-1 rounded bg-black/10 hover:bg-red-500/80 dark:bg-white/10 dark:hover:bg-red-500/80 opacity-0 group-hover:opacity-100 transition-opacity hover:text-white"
+                    title="Delete message"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                  </button>
+
+                  {/* Edit Button - only for user messages */}
+                  {msg.role === 'user' && (
+                    <button
+                      onClick={() => editMessage(msg.id)}
+                      className="absolute top-2 right-14 p-1 rounded bg-black/10 hover:bg-blue-500/80 dark:bg-white/10 dark:hover:bg-blue-500/80 opacity-0 group-hover:opacity-100 transition-opacity hover:text-white"
+                      title="Edit message"
+                    >
+                      <Edit2 className="w-3 h-3" />
+                    </button>
+                  )}
                 </div>
                 {msg.options && (
                   <div className="mt-2 flex flex-wrap gap-2">
@@ -1524,8 +1591,18 @@ You CAN navigate to other URLs using the 'navigate' action.`;
                     <span className="font-semibold not-italic">Thinking:</span> {currentThought}
                   </div>
                 )}
-                <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl rounded-tl-none p-4 shadow-sm w-16 flex items-center justify-center">
-                  <Loader2 className="w-5 h-5 animate-spin text-blue-500" />
+                <div className="flex items-center gap-2">
+                  <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl rounded-tl-none p-4 shadow-sm flex items-center justify-center">
+                    <Loader2 className="w-5 h-5 animate-spin text-blue-500" />
+                  </div>
+                  <button
+                    onClick={stopGeneration}
+                    className="p-2 rounded-lg bg-red-500 hover:bg-red-600 text-white shadow-sm transition-colors flex items-center gap-1"
+                    title="Stop generation"
+                  >
+                    <Square className="w-4 h-4 fill-current" />
+                    <span className="text-xs font-medium">Stop</span>
+                  </button>
                 </div>
               </div>
             </div>
