@@ -780,6 +780,7 @@ function MainApp() {
       let loopCount = 0;
       const MAX_LOOPS = 10;
       let finalResponse = "";
+      const completedActions: { action: any; result: string; thought: string }[] = [];
 
       while (loopCount < MAX_LOOPS) {
         // Capture current context
@@ -936,29 +937,54 @@ You CAN navigate to other URLs using the 'navigate' action.`;
         if (action) {
           const actionResult = await executeAction(action);
 
+          // Track completed actions for summary
+          completedActions.push({ action, result: actionResult, thought });
+
           // Add AI's thought/action to history so it remembers what it did
           currentHistory.push({ role: 'assistant', content: `Thought: ${thought}\nAction: ${JSON.stringify(action)}` });
           // Add result to history
           currentHistory.push({ role: 'user', content: `Action Result: ${actionResult}` });
 
-          // If the AI also provided a response along with the action, use it and stop
+          // If the AI also provided a meaningful response along with the action, use it
           // This handles cases like "I've set the reminder for you" + action
-          if (responseContent && responseContent !== thought && !responseContent.includes('"action"')) {
+          if (responseContent && responseContent !== thought && !responseContent.includes('"action"') && responseContent.length > 20) {
             finalResponse = responseContent;
             break;
           }
 
           loopCount++;
+
+          // If we've done actions but reached max loops, generate a proper summary
+          if (loopCount >= MAX_LOOPS) {
+            const actionSummary = completedActions.map((a, i) =>
+              `${i + 1}. ${a.thought || 'Action'}: ${a.result.includes('✅') ? 'Done' : a.result}`
+            ).join('\n');
+            finalResponse = `I completed the following actions:\n${actionSummary}`;
+            break;
+          }
           // Continue loop
         } else {
           // No action, this is the final response
-          finalResponse = responseContent;
+          // But check if we did actions before - if so, make sure the response acknowledges them
+          if (completedActions.length > 0 && (!responseContent || responseContent.length < 20)) {
+            const actionSummary = completedActions.map((a, i) =>
+              `${i + 1}. ${a.thought || 'Action'}: ${a.result.includes('✅') ? 'Done' : a.result}`
+            ).join('\n');
+            finalResponse = `Done! Here's what I did:\n${actionSummary}`;
+          } else {
+            finalResponse = responseContent;
+          }
           break;
         }
       }
 
-      if (loopCount >= MAX_LOOPS) {
-        finalResponse = "I reached the maximum number of steps. Here is what I found so far.";
+      if (loopCount >= MAX_LOOPS && !finalResponse) {
+        const actionSummary = completedActions.map((a, i) =>
+          `${i + 1}. ${a.thought || 'Action'}: ${a.result.includes('✅') ? 'Done' : a.result}`
+        ).join('\n');
+        finalResponse = completedActions.length > 0
+          ? `I completed the following actions:\n${actionSummary}`
+          : "I reached the maximum number of steps. Here is what I found so far.";
       }
 
       const responseMessage: Message = {
