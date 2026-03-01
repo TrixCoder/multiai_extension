@@ -24,12 +24,12 @@
 
 ### 🧠 Multi-Model AI Support
 Choose from the best AI models available:
-- **Google Gemini** (2.5 Pro, 2.5 Flash, 2.0 Flash/Pro, 1.5 Pro/Flash) — Free tier available!
-- **OpenAI** (GPT-5.1, GPT-5, GPT-4.1, GPT-4o, o3, o1 Pro)
-- **Anthropic Claude** (Opus 4, Sonnet 4, 3.7/3.5 Sonnet, Haiku)
-- **Perplexity** (Sonar Pro, Sonar Reasoning, Deep Research) — Real-time web search
-- **OpenRouter** — Access 100+ models (Llama 4, DeepSeek R1/V3, Qwen 3, Mistral, Codestral)
-- **Custom Provider** — Use any OpenAI-compatible API (Ollama, LM Studio)
+- **Google Gemini** (3.1 Pro Preview, 3 Flash Preview, 3 Pro Preview, 2.5 Pro, 2.5 Flash) — Free tier available!
+- **OpenAI** (GPT-5.1, GPT-5)
+- **Anthropic Claude** (Opus 4.6, Sonnet 4.6, Opus 4.5/4, Sonnet 4.5/4, 3.7 Sonnet)
+- **Perplexity** (Sonar Pro, Sonar Reasoning Pro, Sonar Reasoning, Sonar, Deep Research) — Real-time web search
+- **OpenRouter** — Access 100+ models through a single key (GPT-5.1/5/4.1, Claude 4.6/4.5/3.7, Gemini 3.1/3/2.5, Llama 4, DeepSeek R1/V3, Qwen 3, Mistral, Codestral, Command R+)
+- **Custom Provider** — Use any OpenAI-compatible API (Ollama, LM Studio, Together AI, Bytez)
 
 ### 🌐 Browser Automation
 The AI can control your browser to:
@@ -52,7 +52,10 @@ Set reminders using natural language:
   - 🗑️ Manage and delete reminders
 
 ### 💬 Chat Interface
-- Modern, responsive design with dark/light theme
+- Modern, responsive design with premium glassmorphism and dark theme
+- Color-coded provider pills for easy model identification
+- Gradient chat bubbles with smooth animations
+- Quick-action suggestion buttons on empty state
 - Chat history with session management
 - Rename, delete, and organize conversations
 - Copy messages to clipboard
@@ -201,7 +204,7 @@ Real-time web search capabilities. Pro subscribers get $5/month credits.
 3. Click **"Generate"** to create a new API key
 
 ### 3. OpenAI (Paid)
-Access to GPT-4o and other cutting-edge models.
+Access to GPT-5.1, GPT-5, and other cutting-edge models.
 
 1. Go to [OpenAI Platform](https://platform.openai.com/api-keys)
 2. Sign up or log in
@@ -209,7 +212,7 @@ Access to GPT-4o and other cutting-edge models.
 4. Go to **API Keys** and click **"Create new secret key"**
 
 ### 4. Anthropic Claude (Paid)
-Access to Claude 3.5 Sonnet and other models.
+Access to Claude Opus 4.6, Sonnet 4.6, Claude 3.7 Sonnet and other models.
 
 1. Go to [Anthropic Console](https://console.anthropic.com/)
 2. Sign up or log in
@@ -217,7 +220,7 @@ Access to Claude 3.5 Sonnet and other models.
 4. Go to **"Get API Keys"** and click **"Create Key"**
 
 ### 5. OpenRouter (Pay-as-you-go) 🌐
-Access 100+ models with a single API key — GPT-4.1, Claude, Llama 4, DeepSeek, and more!
+Access 100+ models with a single API key — GPT-5.1, Claude Opus 4.6, Gemini 3.1, Llama 4, DeepSeek, and more!
 
 1. Go to [OpenRouter](https://openrouter.ai/)
 2. Sign up or log in

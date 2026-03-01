@@ -101,40 +101,25 @@ function MainApp() {
   // Available Models Mapping
   const AVAILABLE_MODELS: Record<Model, { id: string; name: string }[]> = {
     gemini: [
-      { id: 'gemini-2.5-pro-preview-06-05', name: 'Gemini 2.5 Pro (Latest)' },
-      { id: 'gemini-2.5-flash-preview-05-20', name: 'Gemini 2.5 Flash' },
-      { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash' },
-      { id: 'gemini-2.0-flash-lite', name: 'Gemini 2.0 Flash Lite' },
-      { id: 'gemini-2.0-pro', name: 'Gemini 2.0 Pro' },
-      { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro' },
-      { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash' },
-      { id: 'gemini-1.5-flash-8b', name: 'Gemini 1.5 Flash 8B' }
+      { id: 'gemini-3.1-pro-preview', name: 'Gemini 3.1 Pro Preview (Latest)' },
+      { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash' },
+      { id: 'gemini-3-pro-preview', name: 'Gemini 3 Pro' },
+      { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro' },
+      { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash' },
     ],
     openai: [
       { id: 'gpt-5.1', name: 'GPT-5.1 (Latest)' },
       { id: 'gpt-5', name: 'GPT-5' },
-      { id: 'gpt-4.1', name: 'GPT-4.1' },
-      { id: 'gpt-4.1-mini', name: 'GPT-4.1 Mini' },
-      { id: 'gpt-4.1-nano', name: 'GPT-4.1 Nano' },
-      { id: 'gpt-4o', name: 'GPT-4o' },
-      { id: 'gpt-4o-mini', name: 'GPT-4o Mini' },
-      { id: 'o3', name: 'o3' },
-      { id: 'o3-mini', name: 'o3 Mini' },
-      { id: 'o1', name: 'o1' },
-      { id: 'o1-mini', name: 'o1 Mini' },
-      { id: 'o1-pro', name: 'o1 Pro' }
     ],
     claude: [
+      { id: 'claude-opus-4-6', name: 'Claude Opus 4.6 (Latest)' },
+      { id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6' },
       { id: 'claude-opus-4.5', name: 'Claude Opus 4.5' },
       { id: 'claude-sonnet-4.5-thinking', name: 'Claude Sonnet 4.5 (Thinking)' },
       { id: 'claude-sonnet-4.5', name: 'Claude Sonnet 4.5' },
-      { id: 'claude-opus-4', name: 'Claude Opus 4' },
+      { id: 'claude-opus-4-20250514', name: 'Claude Opus 4' },
       { id: 'claude-sonnet-4', name: 'Claude Sonnet 4' },
-      { id: 'claude-3-7-sonnet', name: 'Claude 3.7 Sonnet' },
-      { id: 'claude-3-5-sonnet-v2', name: 'Claude 3.5 Sonnet v2' },
-      { id: 'claude-3-5-sonnet', name: 'Claude 3.5 Sonnet' },
-      { id: 'claude-3-5-haiku', name: 'Claude 3.5 Haiku' },
-      { id: 'claude-3-opus', name: 'Claude 3 Opus' }
+      { id: 'claude-3-7-sonnet-latest', name: 'Claude 3.7 Sonnet' },
     ],
     perplexity: [
       { id: 'sonar-pro', name: 'Sonar Pro' },
@@ -148,10 +133,14 @@ function MainApp() {
       { id: 'openai/gpt-5', name: 'GPT-5' },
       { id: 'openai/gpt-4.1', name: 'GPT-4.1' },
       { id: 'openai/o1-pro', name: 'o1 Pro' },
+      { id: 'anthropic/claude-opus-4-6', name: 'Claude Opus 4.6' },
+      { id: 'anthropic/claude-sonnet-4-6', name: 'Claude Sonnet 4.6' },
       { id: 'anthropic/claude-opus-4.5', name: 'Claude Opus 4.5' },
       { id: 'anthropic/claude-sonnet-4.5', name: 'Claude Sonnet 4.5' },
       { id: 'anthropic/claude-sonnet-4.5-thinking', name: 'Claude Sonnet 4.5 (Thinking)' },
       { id: 'anthropic/claude-3.7-sonnet', name: 'Claude 3.7 Sonnet' },
+      { id: 'google/gemini-3.1-pro-preview', name: 'Gemini 3.1 Pro Preview' },
+      { id: 'google/gemini-3-flash-preview', name: 'Gemini 3 Flash' },
       { id: 'google/gemini-2.5-pro', name: 'Gemini 2.5 Pro' },
       { id: 'google/gemini-2.5-flash', name: 'Gemini 2.5 Flash' },
       { id: 'meta-llama/llama-4-maverick', name: 'Llama 4 Maverick' },
@@ -1111,19 +1100,19 @@ You CAN navigate to other URLs using the 'navigate' action.`;
 
       {/* History Sidebar */}
       <div className={cn(
-        "fixed inset-y-0 left-0 z-40 w-64 bg-gray-100 dark:bg-gray-900 border-r border-gray-200 dark:border-gray-800 transform transition-transform duration-300 ease-in-out flex flex-col shadow-2xl sm:shadow-none",
+        "fixed inset-y-0 left-0 z-40 w-72 bg-white/95 dark:bg-gray-900/95 backdrop-blur-xl border-r border-gray-200/60 dark:border-gray-700/40 transform transition-transform duration-300 ease-in-out flex flex-col shadow-2xl",
         showHistory ? "translate-x-0" : "-translate-x-full"
       )}>
-        <div className="p-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between">
-          <h2 className="font-semibold text-sm">Chat History</h2>
-          <button onClick={() => setShowHistory(false)} className="p-1 hover:bg-gray-200 dark:hover:bg-gray-800 rounded"><X className="w-4 h-4" /></button>
+        <div className="p-4 border-b border-gray-200/60 dark:border-gray-700/40 flex items-center justify-between">
+          <h2 className="font-bold text-sm tracking-wide uppercase text-gray-500 dark:text-gray-400">History</h2>
+          <button onClick={() => setShowHistory(false)} className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"><X className="w-4 h-4" /></button>
         </div>
-        <div className="p-2">
-          <button onClick={handleNewChat} className="w-full flex items-center gap-2 p-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm font-medium"><PlusCircle className="w-4 h-4" /> New Chat</button>
+        <div className="p-3">
+          <button onClick={handleNewChat} className="w-full flex items-center justify-center gap-2 p-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl transition-all text-sm font-semibold shadow-md shadow-blue-600/25 hover:shadow-lg hover:shadow-blue-600/35"><PlusCircle className="w-4 h-4" /> New Chat</button>
         </div>
         <div className="flex-1 overflow-y-auto p-2 space-y-1">
           {sessions.map(session => (
-            <div key={session.id} onClick={() => loadSession(session.id)} className={cn("group flex items-center gap-2 p-2 rounded-lg cursor-pointer text-sm transition-colors", currentSessionId === session.id ? "bg-white dark:bg-gray-800 shadow-sm" : "hover:bg-gray-200 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-400")}>
+            <div key={session.id} onClick={() => loadSession(session.id)} className={cn("group flex items-center gap-2 p-2.5 rounded-xl cursor-pointer text-sm transition-all duration-200", currentSessionId === session.id ? "bg-blue-50 dark:bg-blue-900/20 shadow-sm border border-blue-200/60 dark:border-blue-800/40 text-blue-700 dark:text-blue-300" : "hover:bg-gray-100 dark:hover:bg-gray-800/60 text-gray-600 dark:text-gray-400 border border-transparent")}>
               <MessageSquare className="w-4 h-4 shrink-0" />
               {editingSessionId === session.id ? (
                 <div className="flex-1 flex items-center gap-1">
@@ -1444,30 +1433,39 @@ You CAN navigate to other URLs using the 'navigate' action.`;
         )}
 
         {/* Model Selector */}
-        <div className="flex flex-col bg-gray-100 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
-          <div className="flex flex-wrap gap-2 p-2">
-            {(['gemini', 'openai', 'claude', 'perplexity', 'openrouter', 'custom'] as const).map((m) => (
-              <button
-                key={m}
-                onClick={() => { setSelectedModel(m); chrome.storage.sync.set({ selectedModel: m }); }}
-                className={cn(
-                  "px-3 py-1.5 rounded-full text-xs font-medium capitalize whitespace-nowrap transition-all duration-200 flex items-center gap-1.5 border",
-                  selectedModel === m
-                    ? "bg-blue-600 text-white shadow-md shadow-blue-500/20 border-transparent"
-                    : "bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 hover:border-gray-300 dark:hover:border-gray-600"
-                )}
-              >
-                {m === 'openrouter' ? 'OpenRouter' : m}
-              </button>
-            ))}
+        <div className="flex flex-col bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-800/80 dark:to-gray-850/80 border-b border-gray-200/60 dark:border-gray-700/40">
+          <div className="flex flex-wrap gap-1.5 p-2.5">
+            {(['gemini', 'openai', 'claude', 'perplexity', 'openrouter', 'custom'] as const).map((m) => {
+              const providerColors: Record<string, string> = {
+                gemini: 'from-blue-500 to-cyan-500 shadow-blue-500/25',
+                openai: 'from-emerald-500 to-teal-500 shadow-emerald-500/25',
+                claude: 'from-orange-500 to-amber-500 shadow-orange-500/25',
+                perplexity: 'from-violet-500 to-purple-500 shadow-violet-500/25',
+                openrouter: 'from-pink-500 to-rose-500 shadow-pink-500/25',
+                custom: 'from-gray-500 to-slate-500 shadow-gray-500/25',
+              };
+              return (
+                <button
+                  key={m}
+                  onClick={() => { setSelectedModel(m); chrome.storage.sync.set({ selectedModel: m }); }}
+                  className={cn(
+                    "model-pill px-3 py-1.5 rounded-full text-xs font-semibold capitalize whitespace-nowrap flex items-center gap-1.5 border",
+                    selectedModel === m
+                      ? `active bg-gradient-to-r ${providerColors[m]} text-white border-transparent shadow-md`
+                      : "bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border-gray-200/80 dark:border-gray-600/60 hover:bg-gray-50 dark:hover:bg-gray-700/80 hover:border-gray-300 dark:hover:border-gray-500"
+                  )}
+                >
+                  {m === 'openrouter' ? 'OpenRouter' : m}
+                </button>
+              );
+            })}
           </div>
           {selectedModel !== 'custom' && (
-            <div className="px-2 pb-2">
+            <div className="px-2.5 pb-2.5">
               <select
                 value={selectedModelId}
                 onChange={(e) => { setSelectedModelId(e.target.value); chrome.storage.sync.set({ selectedModelId: e.target.value }); }}
-                className="w-full p-2 text-xs rounded-xl bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 focus:ring-1 focus:ring-blue-500 outline-none cursor-pointer appearance-none"
-                style={{ maxHeight: '200px' }}
+                className="w-full p-2 text-xs rounded-xl bg-white dark:bg-gray-700/80 border border-gray-200/80 dark:border-gray-600/60 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 outline-none cursor-pointer font-medium"
               >
                 {AVAILABLE_MODELS[selectedModel].map((model) => (
                   <option key={model.id} value={model.id}>{model.name}</option>
@@ -1490,17 +1488,36 @@ You CAN navigate to other URLs using the 'navigate' action.`;
           )}
 
           {messages.length === 0 && (
-            <div className="flex flex-col items-center justify-center h-full text-gray-400 dark:text-gray-500 space-y-4 opacity-70">
-              <Bot className="w-16 h-16" />
-              <p className="text-center text-sm">Select a model and start chatting.<br />I can read your current tab!</p>
+            <div className="flex flex-col items-center justify-center h-full space-y-5">
+              <div className="relative">
+                <div className="absolute inset-0 bg-gradient-to-br from-blue-500/20 to-purple-500/20 rounded-full blur-2xl scale-150"></div>
+                <div className="relative w-20 h-20 rounded-2xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center shadow-xl shadow-blue-500/20">
+                  <Bot className="w-10 h-10 text-white" />
+                </div>
+              </div>
+              <div className="text-center space-y-2">
+                <h2 className="text-lg font-bold text-gray-700 dark:text-gray-200">What can I help with?</h2>
+                <p className="text-sm text-gray-400 dark:text-gray-500 max-w-xs">Select a model above and start chatting. I can read and interact with your current browser tab!</p>
+              </div>
+              <div className="flex flex-wrap gap-2 justify-center max-w-sm">
+                {['Summarize this page', 'Search the web', 'Set a reminder'].map((suggestion) => (
+                  <button
+                    key={suggestion}
+                    onClick={() => { setInput(suggestion); }}
+                    className="px-3.5 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-xs font-medium text-gray-600 dark:text-gray-300 hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:border-blue-300 dark:hover:border-blue-700 hover:text-blue-600 dark:hover:text-blue-400 transition-all shadow-sm"
+                  >
+                    {suggestion}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
 
           {visibleMessages.map((msg) => (
-            <div key={msg.id} className={cn("flex gap-3 max-w-3xl mx-auto animate-in fade-in slide-in-from-bottom-2 duration-300", msg.role === 'user' ? "justify-end" : "justify-start")}>
+            <div key={msg.id} className={cn("chat-bubble flex gap-3 max-w-3xl mx-auto", msg.role === 'user' ? "justify-end" : "justify-start")}>
               {msg.role === 'assistant' && (
-                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center shrink-0 shadow-lg">
-                  <Bot className="w-5 h-5 text-white" />
+                <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center shrink-0 shadow-lg shadow-blue-500/20 ring-2 ring-white/10">
+                  <Bot className="w-4 h-4 text-white" />
                 </div>
               )}
 
@@ -1510,7 +1527,7 @@ You CAN navigate to other URLs using the 'navigate' action.`;
                     <span className="font-semibold not-italic">Thought:</span> {msg.thought}
                   </div>
                 )}
-                <div className={cn("rounded-2xl p-4 shadow-sm relative group", msg.role === 'user' ? "bg-blue-600 text-white rounded-tr-none" : "bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-tl-none")}>
+                <div className={cn("rounded-2xl p-4 relative group transition-shadow", msg.role === 'user' ? "bg-gradient-to-br from-blue-600 to-indigo-600 text-white rounded-tr-sm shadow-lg shadow-blue-600/20" : "bg-white dark:bg-gray-800/80 border border-gray-200/60 dark:border-gray-700/40 rounded-tl-sm shadow-md shadow-gray-200/50 dark:shadow-none hover:shadow-lg")}>
                   {/* Display Attachments for User Messages */}
                   {msg.role === 'user' && msg.attachments && msg.attachments.length > 0 && (
                     <div className="flex flex-wrap gap-2 mb-2">
@@ -1573,8 +1590,8 @@ You CAN navigate to other URLs using the 'navigate' action.`;
               </div>
 
               {msg.role === 'user' && (
-                <div className="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center shrink-0">
-                  <User className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+                <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-gray-200 to-gray-300 dark:from-gray-700 dark:to-gray-600 flex items-center justify-center shrink-0 shadow-sm">
+                  <User className="w-4 h-4 text-gray-600 dark:text-gray-200" />
                 </div>
               )}
             </div>
@@ -1611,7 +1628,7 @@ You CAN navigate to other URLs using the 'navigate' action.`;
         </div>
 
         {/* Input Area */}
-        <div className="p-4 bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-800">
+        <div className="p-3 bg-white/80 dark:bg-gray-900/80 backdrop-blur-xl border-t border-gray-200/60 dark:border-gray-700/40">
           {/* Attachment Previews */}
           {attachments.length > 0 && (
             <div className="flex gap-2 mb-3 flex-wrap">
@@ -1644,7 +1661,7 @@ You CAN navigate to other URLs using the 'navigate' action.`;
             </div>
           )}
 
-          <div className="relative flex items-end gap-2 bg-gray-100 dark:bg-gray-800 p-2 rounded-2xl border border-gray-200 dark:border-gray-700 focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500 transition-all shadow-inner">
+          <div className="input-glow relative flex items-end gap-2 bg-gray-50 dark:bg-gray-800/80 p-2 rounded-2xl border border-gray-200/80 dark:border-gray-700/50 focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-500/20 transition-all">
             <input
               type="file"
               ref={fileInputRef}
@@ -1677,7 +1694,7 @@ You CAN navigate to other URLs using the 'navigate' action.`;
               className="flex-1 bg-transparent border-none focus:ring-0 resize-none max-h-32 py-2 text-sm"
               rows={1}
             />
-            <button onClick={handleSend} disabled={isLoading || (!input.trim() && attachments.length === 0)} className="p-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg shadow-blue-600/20"><Send className="w-5 h-5" /></button>
+            <button onClick={handleSend} disabled={isLoading || (!input.trim() && attachments.length === 0)} className="p-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl hover:from-blue-700 hover:to-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-lg shadow-blue-600/25 hover:shadow-blue-600/40 active:scale-95"><Send className="w-4 h-4" /></button>
           </div>
         </div>
       </div>
